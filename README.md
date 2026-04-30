@@ -176,7 +176,7 @@ POST /codymail/api/v1/mail/send
 Content-Type: application/json
 
 {
-  "appTag": "alv-dev",
+  "appTag": "sunshine-app",
   "recipients": ["user@example.com"],
   "ccRecipients": [],
   "bccRecipients": [],
@@ -219,7 +219,7 @@ POST /graphql
 # Sender anlegen
 mutation {
   createSender(input: {
-    appTag: "alv-dev"
+    appTag: "sunshine-app"
     email: "noreply@example.com"
     test: false
     dailyQuota: 1000
@@ -229,7 +229,7 @@ mutation {
 
 # Audit-Log abfragen
 query {
-  mails(filter: { appTag: "alv-dev", status: "DELIVERED" }, page: 0, size: 20) {
+  mails(filter: { appTag: "sunshine-app", status: "DELIVERED" }, page: 0, size: 20) {
     total
     items { traceId status timestamp recipients }
   }

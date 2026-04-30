@@ -3,13 +3,13 @@ package hash
 import "testing"
 
 func TestSpamHash(t *testing.T) {
-	h1 := SpamHash("alv-dev", "Hello", []string{"a@b.com"}, 100, 0)
-	h2 := SpamHash("alv-dev", "Hello", []string{"a@b.com"}, 100, 0)
+	h1 := SpamHash("sunshine-app", "Hello", []string{"a@b.com"}, 100, 0)
+	h2 := SpamHash("sunshine-app", "Hello", []string{"a@b.com"}, 100, 0)
 	if h1 != h2 {
 		t.Error("identical inputs must produce identical hash")
 	}
 
-	h3 := SpamHash("alv-dev", "Hello", []string{"a@b.com"}, 101, 0)
+	h3 := SpamHash("sunshine-app", "Hello", []string{"a@b.com"}, 101, 0)
 	if h1 == h3 {
 		t.Error("different body length must produce different hash")
 	}

@@ -131,7 +131,7 @@ REST (Gateway) → 5-Stage Validation (Format / Sender-Lookup / Domain / Quota /
 
 ### Key Domain Concepts
 
-- **appTag**: Tenant identifier (e.g. `alv-dev`). Each sender has exactly one appTag.
+- **appTag**: Tenant identifier (e.g. `sunshine-app`). Each sender has exactly one appTag.
 - **MailRequestDO**: Enriched NATS payload (≠ REST struct `MailRequest`)
 - **Sender**: Tenant config — stored in NATS KV bucket `senders`; maps appTag to technical sender email, daily quota, allowed domains. In-memory cached in gateway (TTL 10 min).
 - **Quota**: Rolling 24h window, counts recipients (TO+CC+BCC). State in NATS KV bucket `quota` per appTag, updated via optimistic CAS (`nats.KeyValue.Update`). Fail-closed: any KV error → HTTP 503, never bypass.
