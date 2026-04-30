@@ -1,0 +1,158 @@
+package gateway
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"codymail-go/internal/config"
+	"codymail-go/internal/domain"
+)
+
+// stubs
+
+type stubSenders struct {
+	sender domain.Sender
+	err    error
+}
+
+func (s *stubSenders) Get(_ string) (domain.Sender, error) { return s.sender, s.err }
+
+type stubQuota struct{ err error }
+
+func (s *stubQuota) Check(_ string, _, _ int) error     { return s.err }
+func (s *stubQuota) CurrentUsage(_ string) (int, error) { return 0, nil }
+
+type stubSpam struct{ err error }
+
+func (s *stubSpam) Check(_ string) error { return s.err }
+
+type stubPublisher struct{ err error }
+
+func (s *stubPublisher) Publish(_ context.Context, _ *domain.MailRequestDO) error { return s.err }
+
+func defaultCfg() config.Config {
+	return config.Config{
+		MaxBodySize:          10_000_000,
+		MimeWhitelist:        []string{"application/pdf", "image/jpeg"},
+		MaxTotalAttachmentMB: 20,
+	}
+}
+
+func defaultSender() domain.Sender {
+	return domain.Sender{AppTag: "test", Email: "noreply@example.com", DailyQuota: 100}
+}
+
+func buildHandler(senders senderLookup, quota quotaChecker, spam spamChecker, pub natsPublisher) *Handler {
+	return NewHandler(defaultCfg(), senders, quota, spam, pub)
+}
+
+func sendRequest(t *testing.T, h *Handler, body any) *httptest.ResponseRecorder {
+	t.Helper()
+	data, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/codymail/api/v1/mail/send", bytes.NewReader(data))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.Router().ServeHTTP(rr, req)
+	return rr
+}
+
+func TestHandleSend_Success(t *testing.T) {
+	h := buildHandler(
+		&stubSenders{sender: defaultSender()},
+		&stubQuota{},
+		&stubSpam{},
+		&stubPublisher{},
+	)
+	body := map[string]any{
+		"appTag":     "test",
+		"recipients": []string{"user@example.com"},
+		"subject":    "Hello",
+	}
+	rr := sendRequest(t, h, body)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestHandleSend_MissingAppTag(t *testing.T) {
+	h := buildHandler(&stubSenders{sender: defaultSender()}, &stubQuota{}, &stubSpam{}, &stubPublisher{})
+	body := map[string]any{"recipients": []string{"user@example.com"}}
+	rr := sendRequest(t, h, body)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rr.Code)
+	}
+}
+
+func TestHandleSend_UnknownAppTag(t *testing.T) {
+	h := buildHandler(
+		&stubSenders{err: &domain.ValidationError{Code: domain.ErrUnknownAppTag, Message: "unknown"}},
+		&stubQuota{}, &stubSpam{}, &stubPublisher{},
+	)
+	body := map[string]any{"appTag": "unknown", "recipients": []string{"user@example.com"}}
+	rr := sendRequest(t, h, body)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rr.Code)
+	}
+}
+
+func TestHandleSend_QuotaExceeded(t *testing.T) {
+	h := buildHandler(
+		&stubSenders{sender: defaultSender()},
+		&stubQuota{err: &domain.QuotaError{Limit: 10, Current: 10, Requested: 1}},
+		&stubSpam{}, &stubPublisher{},
+	)
+	body := map[string]any{"appTag": "test", "recipients": []string{"user@example.com"}}
+	rr := sendRequest(t, h, body)
+	if rr.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429, got %d", rr.Code)
+	}
+}
+
+func TestHandleSend_SpamDetected(t *testing.T) {
+	h := buildHandler(
+		&stubSenders{sender: defaultSender()},
+		&stubQuota{},
+		&stubSpam{err: &domain.ValidationError{Code: domain.ErrSpamDetected, Message: "dup"}},
+		&stubPublisher{},
+	)
+	body := map[string]any{"appTag": "test", "recipients": []string{"user@example.com"}}
+	rr := sendRequest(t, h, body)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rr.Code)
+	}
+}
+
+func TestHandleSend_NatsUnavailable(t *testing.T) {
+	h := buildHandler(
+		&stubSenders{sender: defaultSender()},
+		&stubQuota{},
+		&stubSpam{},
+		&stubPublisher{err: &domain.NatsPublishError{Cause: errors.New("connection refused")}},
+	)
+	body := map[string]any{"appTag": "test", "recipients": []string{"user@example.com"}}
+	rr := sendRequest(t, h, body)
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", rr.Code)
+	}
+}
+
+func TestHandleSend_QuotaStateError(t *testing.T) {
+	h := buildHandler(
+		&stubSenders{sender: defaultSender()},
+		&stubQuota{err: &domain.QuotaStateError{Cause: errors.New("NATS down")}},
+		&stubSpam{}, &stubPublisher{},
+	)
+	body := map[string]any{"appTag": "test", "recipients": []string{"user@example.com"}}
+	rr := sendRequest(t, h, body)
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", rr.Code)
+	}
+}

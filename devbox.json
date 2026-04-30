@@ -1,0 +1,42 @@
+{
+  "packages": [
+    "go_1_24",
+    "golangci-lint",
+    "gotools",
+    "nats-server"
+  ],
+  "env": {
+    "DOCKER_API_VERSION": "1.41",
+    "TESTCONTAINERS_RYUK_DISABLED": "true",
+    "GOFLAGS": "-mod=mod",
+    "CODYMAIL_ENV": "dev"
+  },
+  "shell": {
+    "init_hook": [
+      "echo 'Devbox-Umgebung für CodyMail (Go) geladen'",
+      "echo '-------------------------------------------'",
+      "go version",
+      "echo '-------------------------------------------'",
+      "echo -n 'golangci-lint: ' && golangci-lint --version",
+      "echo '-------------------------------------------'",
+      "echo -n 'Docker: ' && (docker info --format '{{.ServerVersion}}' 2>/dev/null || echo 'nicht erreichbar – Integrationstests werden fehlschlagen')",
+      "echo '-------------------------------------------'",
+      "echo 'Skripte: build | test | test-gateway | test-worker | test-admin | test-bounce | test-integration | lint | coverage | generate | up | down'"
+    ],
+    "scripts": {
+      "build":           "go build ./...",
+      "test":            "go test ./...",
+      "test-gateway":    "go test ./cmd/mail-gateway/... ./internal/gateway/...",
+      "test-worker":     "go test ./cmd/mail-worker/... ./internal/worker/...",
+      "test-admin":      "go test ./cmd/mail-admin/... ./internal/admin/...",
+      "test-bounce":     "go test ./cmd/bouncemanagement/... ./internal/bounce/...",
+      "test-integration":"go test -tags integration -timeout 120s ./...",
+      "lint":            "golangci-lint run ./...",
+      "generate":        "go generate ./...",
+      "up":              "docker compose up -d && echo 'NATS gestartet. Warte auf Readiness...' && sleep 2 && docker compose ps",
+      "down":            "docker compose down",
+      "coverage":        "go test -coverprofile=coverage.out -covermode=atomic ./... && devbox run coverage-report",
+      "coverage-report": "go tool cover -func=coverage.out | awk 'BEGIN{print \"\\nCoverage-Report\"} /^total/{printf \"%-60s %s\\n\", $1, $3; next} {printf \"%-60s %s\\n\", $1, $3}' | tail -30"
+    }
+  }
+}

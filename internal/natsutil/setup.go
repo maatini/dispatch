@@ -1,0 +1,136 @@
+package natsutil
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/nats-io/nats.go"
+)
+
+const (
+	StreamMails      = "CODYMAIL_MAILS"
+	StreamAudit      = "CODYMAIL_AUDIT"
+	StreamDeadLetter = "CODYMAIL_DEAD_LETTERS"
+	StreamBounces    = "CODYMAIL_BOUNCES"
+
+	SubjectMails      = "cody.mailing.job.request.mails"
+	SubjectAudit      = "cody.mailing.audit"
+	SubjectDeadLetter = "cody.mailing.deadletter"
+	SubjectBounce     = "cody.mailing.bounce"
+
+	BucketSenders   = "senders"
+	BucketQuota     = "quota"
+	BucketSpam      = "spam"
+	BucketDelivered = "delivered"
+
+	ConsumerMailWorker = "mail-worker"
+)
+
+// Connect establishes a NATS connection and returns the JetStream context.
+func Connect(url string) (*nats.Conn, nats.JetStreamContext, error) {
+	nc, err := nats.Connect(url,
+		nats.RetryOnFailedConnect(true),
+		nats.MaxReconnects(10),
+		nats.ReconnectWait(2*time.Second),
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("NATS connect %s: %w", url, err)
+	}
+	js, err := nc.JetStream()
+	if err != nil {
+		nc.Close()
+		return nil, nil, fmt.Errorf("JetStream context: %w", err)
+	}
+	return nc, js, nil
+}
+
+// ProvisionStreams ensures all required JetStream streams exist.
+func ProvisionStreams(js nats.JetStreamContext) error {
+	streams := []nats.StreamConfig{
+		{
+			Name:      StreamMails,
+			Subjects:  []string{SubjectMails},
+			Storage:   nats.FileStorage,
+			Retention: nats.WorkQueuePolicy,
+			MaxAge:    72 * time.Hour,
+		},
+		{
+			Name:     StreamAudit,
+			Subjects: []string{SubjectAudit},
+			Storage:  nats.FileStorage,
+			MaxAge:   30 * 24 * time.Hour,
+		},
+		{
+			Name:     StreamDeadLetter,
+			Subjects: []string{SubjectDeadLetter},
+			Storage:  nats.FileStorage,
+			MaxAge:   30 * 24 * time.Hour,
+		},
+		{
+			Name:     StreamBounces,
+			Subjects: []string{SubjectBounce},
+			Storage:  nats.FileStorage,
+			MaxAge:   30 * 24 * time.Hour,
+		},
+	}
+	for _, cfg := range streams {
+		if err := upsertStream(js, cfg); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func upsertStream(js nats.JetStreamContext, cfg nats.StreamConfig) error {
+	_, err := js.StreamInfo(cfg.Name)
+	if err == nats.ErrStreamNotFound {
+		_, err = js.AddStream(&cfg)
+		return err
+	}
+	if err != nil {
+		return fmt.Errorf("stream info %s: %w", cfg.Name, err)
+	}
+	_, err = js.UpdateStream(&cfg)
+	return err
+}
+
+// ProvisionKVBuckets ensures all required KV buckets exist.
+func ProvisionKVBuckets(js nats.JetStreamContext, spamTTL time.Duration) error {
+	buckets := []nats.KeyValueConfig{
+		{Bucket: BucketSenders, Storage: nats.FileStorage},
+		{Bucket: BucketQuota, Storage: nats.FileStorage, TTL: 25 * time.Hour},
+		{Bucket: BucketSpam, Storage: nats.FileStorage, TTL: spamTTL},
+		{Bucket: BucketDelivered, Storage: nats.FileStorage, TTL: 7 * 24 * time.Hour},
+	}
+	for _, cfg := range buckets {
+		if err := upsertKV(js, cfg); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func upsertKV(js nats.JetStreamContext, cfg nats.KeyValueConfig) error {
+	_, err := js.KeyValue(cfg.Bucket)
+	if err == nats.ErrBucketNotFound {
+		_, err = js.CreateKeyValue(&cfg)
+		return err
+	}
+	return err
+}
+
+// ProvisionWorkerConsumer ensures the durable pull consumer for the mail worker exists.
+func ProvisionWorkerConsumer(js nats.JetStreamContext) error {
+	_, err := js.ConsumerInfo(StreamMails, ConsumerMailWorker)
+	if err == nats.ErrConsumerNotFound {
+		_, err = js.AddConsumer(StreamMails, &nats.ConsumerConfig{
+			Durable:       ConsumerMailWorker,
+			AckPolicy:     nats.AckExplicitPolicy,
+			MaxDeliver:    -1,
+			AckWait:       30 * time.Second,
+			FilterSubject: SubjectMails,
+		})
+		return err
+	}
+	return err
+}
