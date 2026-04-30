@@ -73,3 +73,12 @@ func TestCheck_DifferentHashesPass(t *testing.T) {
 		t.Fatalf("different hash must pass: %v", err)
 	}
 }
+
+func TestCheck_KVGetError(t *testing.T) {
+	kv := newMockKV()
+	kv.fail = true
+	c := &Checker{kv: kv}
+	if err := c.Check("abc123"); err == nil {
+		t.Fatal("expected error on KV get failure")
+	}
+}

@@ -1,0 +1,11 @@
+threshold:
+  efficacy: 0
+  mutation-coverage: 0
+
+mutants:
+  arithmetic-base: true
+  conditionals-boundary: true
+  conditionals-negation: true
+  increment-decrement: true
+  invert-assignments: true
+  invert-negation: true

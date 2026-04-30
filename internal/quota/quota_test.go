@@ -141,3 +141,44 @@ func TestCheck_KVErrorFailClosed(t *testing.T) {
 		t.Fatalf("expected QuotaStateError on KV failure, got %T: %v", err, err)
 	}
 }
+
+func TestCurrentUsage_Empty(t *testing.T) {
+	checker := &Checker{kv: newMockKV()}
+	n, err := checker.CurrentUsage("tenant1")
+	if err != nil || n != 0 {
+		t.Fatalf("expected 0, nil; got %d, %v", n, err)
+	}
+}
+
+func TestCurrentUsage_Sum(t *testing.T) {
+	checker := &Checker{kv: newMockKV()}
+	_ = checker.Check("tenant1", 1000, 5)
+	_ = checker.Check("tenant1", 1000, 3)
+	n, err := checker.CurrentUsage("tenant1")
+	if err != nil || n != 8 {
+		t.Fatalf("expected 8, nil; got %d, %v", n, err)
+	}
+}
+
+func TestCurrentUsage_ExpiredNotCounted(t *testing.T) {
+	kv := newMockKV()
+	old := state{Entries: []entry{{TS: time.Now().Add(-25 * time.Hour).Unix(), Count: 99}}}
+	data, _ := json.Marshal(old)
+	kv.data["tenant1"] = data
+	kv.revision["tenant1"] = 1
+	checker := &Checker{kv: kv}
+	n, err := checker.CurrentUsage("tenant1")
+	if err != nil || n != 0 {
+		t.Fatalf("expired entries must not count; got %d, %v", n, err)
+	}
+}
+
+func TestCurrentUsage_KVError(t *testing.T) {
+	kv := newMockKV()
+	kv.failNext = true
+	checker := &Checker{kv: kv}
+	_, err := checker.CurrentUsage("tenant1")
+	if err == nil {
+		t.Fatal("expected error on KV failure")
+	}
+}

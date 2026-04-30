@@ -113,3 +113,50 @@ func TestCheckDomains_CCBlocked(t *testing.T) {
 		t.Fatalf("expected ErrInvalidRecipientDomain for CC, got %v", err)
 	}
 }
+
+func TestDecodeAttachments_Empty(t *testing.T) {
+	result, err := decodeAttachments(nil)
+	if err != nil || len(result) != 0 {
+		t.Fatalf("expected empty result, nil; got %v, %v", result, err)
+	}
+}
+
+func TestDecodeAttachments_Valid(t *testing.T) {
+	atts := []domain.Attachment{
+		{Name: "f.pdf", MimeType: "application/pdf", Content: "aGVsbG8="}, // "hello"
+	}
+	result, err := decodeAttachments(atts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 1 || string(result[0].Content) != "hello" {
+		t.Errorf("unexpected result: %+v", result)
+	}
+}
+
+func TestDecodeAttachments_InvalidBase64(t *testing.T) {
+	atts := []domain.Attachment{
+		{Name: "bad.pdf", MimeType: "application/pdf", Content: "not-valid-base64!!!"},
+	}
+	_, err := decodeAttachments(atts)
+	var ve *domain.ValidationError
+	if !errors.As(err, &ve) || ve.Code != domain.ErrInvalidAttachmentType {
+		t.Fatalf("expected ErrInvalidAttachmentType for bad base64, got %v", err)
+	}
+}
+
+func TestValidateRequest_AttachmentTotalSizeExceeded(t *testing.T) {
+	// 2 MB content string → ~1.5 MB raw, exceeds 1 MB limit
+	req := &domain.MailRequest{
+		AppTag:     "t",
+		Recipients: []string{"a@b.com"},
+		Attachments: []domain.Attachment{
+			{Name: "big.pdf", MimeType: "application/pdf", Content: string(make([]byte, 2*1024*1024))},
+		},
+	}
+	err := validateRequest(req, 10_000_000, []string{"application/pdf"}, 1)
+	var ve *domain.ValidationError
+	if !errors.As(err, &ve) || ve.Code != domain.ErrAttachmentTooLarge {
+		t.Fatalf("expected ErrAttachmentTooLarge, got %v", err)
+	}
+}

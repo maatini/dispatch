@@ -191,3 +191,24 @@ func (g *callCheckGraph) SendEmail(_ context.Context, _ domain.MailRequestDO) er
 	g.onCall()
 	return errors.New("should not be called")
 }
+
+// failJS simulates a NATS publish failure.
+type failJS struct{}
+
+func (j *failJS) Publish(_ string, _ []byte, _ ...nats.PubOpt) (*nats.PubAck, error) {
+	return nil, errors.New("publish failed")
+}
+
+func TestHandle_AuditPublishError_DoesNotPanic(t *testing.T) {
+	proc := &Processor{graph: &stubGraph{}, delivered: newStubKV(), js: &failJS{}}
+	req := domain.MailRequestDO{TraceID: "t-pub", AppTag: "app", Sender: "s@e.com", Recipients: []string{"r@e.com"}}
+	// must complete without panic; audit publish error is only logged
+	proc.Handle(context.Background(), buildMsg(req))
+}
+
+func TestHandle_DeadLetterPublishError_DoesNotPanic(t *testing.T) {
+	proc := &Processor{graph: &stubGraph{}, delivered: newStubKV(), js: &failJS{}}
+	msg := &nats.Msg{Data: []byte("not json"), Header: nats.Header{}}
+	msg.Header.Set("traceId", "t-dl")
+	proc.Handle(context.Background(), msg)
+}
