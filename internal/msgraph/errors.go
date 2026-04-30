@@ -1,10 +1,14 @@
 package msgraph
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 // GraphTransientError wraps 429 / 5xx / IO failures — worker must NOT ack, JetStream redelivers.
 type GraphTransientError struct {
 	StatusCode int
+	RetryAfter time.Duration // populated from Retry-After header on 429
 	Cause      error
 }
 

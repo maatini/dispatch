@@ -2,9 +2,11 @@ package msgraph
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/sony/gobreaker"
@@ -78,7 +80,8 @@ func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, int, error)
 
 		switch {
 		case statusCode == http.StatusTooManyRequests:
-			return nil, &GraphTransientError{StatusCode: statusCode}
+			retryAfter := parseRetryAfter(resp.Header.Get("Retry-After"))
+			return nil, &GraphTransientError{StatusCode: statusCode, RetryAfter: retryAfter}
 		case statusCode >= 500:
 			return nil, &GraphTransientError{StatusCode: statusCode}
 		case statusCode >= 400:
@@ -93,9 +96,10 @@ func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, int, error)
 	return body, statusCode, nil
 }
 
-// doWithRetry retries on 5xx with Fibonacci backoff (max 2 retries).
+// doWithRetry retries on transient errors, honouring Retry-After on 429 (max 2 retries).
 func (c *Client) doWithRetry(ctx context.Context, buildReq func() (*http.Request, error)) ([]byte, int, error) {
-	delays := []time.Duration{2 * time.Second, 2 * time.Second}
+	const fallbackDelay = 2 * time.Second
+	const maxDelay = 30 * time.Second
 	for attempt := range 3 {
 		req, err := buildReq()
 		if err != nil {
@@ -106,17 +110,32 @@ func (c *Client) doWithRetry(ctx context.Context, buildReq func() (*http.Request
 			return body, status, nil
 		}
 		var transient *GraphTransientError
-		if _, ok := err.(*GraphTransientError); !ok {
+		if !errors.As(err, &transient) {
 			return nil, status, err
 		}
-		_ = transient
-		if attempt < len(delays) {
+		if attempt < 2 {
+			wait := fallbackDelay
+			if transient.RetryAfter > wait {
+				wait = transient.RetryAfter
+			}
+			if wait > maxDelay {
+				wait = maxDelay
+			}
 			select {
 			case <-ctx.Done():
 				return nil, 0, ctx.Err()
-			case <-time.After(delays[attempt]):
+			case <-time.After(wait):
 			}
 		}
 	}
 	return nil, 0, &GraphTransientError{Cause: fmt.Errorf("max retries exceeded")}
+}
+
+// parseRetryAfter parses the Retry-After header value (integer seconds).
+func parseRetryAfter(header string) time.Duration {
+	secs, err := strconv.Atoi(header)
+	if err != nil || secs <= 0 {
+		return 0
+	}
+	return time.Duration(secs) * time.Second
 }
