@@ -1,4 +1,4 @@
-module codymail-go
+module dispatch
 
 go 1.25.0
 

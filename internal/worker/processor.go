@@ -10,10 +10,10 @@ import (
 
 	"github.com/nats-io/nats.go"
 
-	"codymail-go/internal/domain"
-	"codymail-go/internal/msgraph"
-	"codymail-go/internal/natsutil"
-	"codymail-go/internal/pii"
+	"dispatch/internal/domain"
+	"dispatch/internal/msgraph"
+	"dispatch/internal/natsutil"
+	"dispatch/internal/pii"
 )
 
 type emailSender interface {

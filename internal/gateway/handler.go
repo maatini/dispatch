@@ -12,10 +12,10 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
 
-	"codymail-go/internal/config"
-	"codymail-go/internal/domain"
-	"codymail-go/internal/hash"
-	"codymail-go/internal/pii"
+	"dispatch/internal/config"
+	"dispatch/internal/domain"
+	"dispatch/internal/hash"
+	"dispatch/internal/pii"
 )
 
 type senderLookup interface {

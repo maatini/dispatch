@@ -8,7 +8,7 @@ import (
 	"io"
 	"net/http"
 
-	"codymail-go/internal/domain"
+	"dispatch/internal/domain"
 )
 
 const (

@@ -8,10 +8,10 @@ import (
 	"syscall"
 	"time"
 
-	"codymail-go/internal/config"
-	"codymail-go/internal/msgraph"
-	"codymail-go/internal/natsutil"
-	"codymail-go/internal/worker"
+	"dispatch/internal/config"
+	"dispatch/internal/msgraph"
+	"dispatch/internal/natsutil"
+	"dispatch/internal/worker"
 )
 
 func main() {

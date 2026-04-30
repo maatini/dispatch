@@ -6,7 +6,7 @@ import (
 
 	"github.com/nats-io/nats.go"
 
-	"codymail-go/internal/domain"
+	"dispatch/internal/domain"
 )
 
 type kvStore interface {

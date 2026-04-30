@@ -9,12 +9,12 @@ import (
 	"syscall"
 	"time"
 
-	"codymail-go/internal/config"
-	"codymail-go/internal/gateway"
-	"codymail-go/internal/natsutil"
-	"codymail-go/internal/quota"
-	"codymail-go/internal/sender"
-	"codymail-go/internal/spam"
+	"dispatch/internal/config"
+	"dispatch/internal/gateway"
+	"dispatch/internal/natsutil"
+	"dispatch/internal/quota"
+	"dispatch/internal/sender"
+	"dispatch/internal/spam"
 )
 
 func main() {

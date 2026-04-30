@@ -9,8 +9,8 @@ import (
 
 	"github.com/nats-io/nats.go"
 
-	"codymail-go/internal/domain"
-	"codymail-go/internal/msgraph"
+	"dispatch/internal/domain"
+	"dispatch/internal/msgraph"
 )
 
 // --- stubs ---

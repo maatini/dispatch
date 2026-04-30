@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"codymail-go/internal/domain"
+	"dispatch/internal/domain"
 )
 
 func TestValidateRequest_Valid(t *testing.T) {

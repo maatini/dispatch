@@ -8,9 +8,9 @@ import (
 
 	"github.com/nats-io/nats.go"
 
-	"codymail-go/internal/domain"
-	"codymail-go/internal/natsutil"
-	"codymail-go/internal/sender"
+	"dispatch/internal/domain"
+	"dispatch/internal/natsutil"
+	"dispatch/internal/sender"
 )
 
 // Resolver holds all dependencies for GraphQL resolvers.

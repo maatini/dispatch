@@ -8,9 +8,9 @@ import (
 	"syscall"
 	"time"
 
-	"codymail-go/internal/bounce"
-	"codymail-go/internal/config"
-	"codymail-go/internal/natsutil"
+	"dispatch/internal/bounce"
+	"dispatch/internal/config"
+	"dispatch/internal/natsutil"
 )
 
 func main() {

@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-playground/validator/v10"
 
-	"codymail-go/internal/domain"
+	"dispatch/internal/domain"
 )
 
 var validate = validator.New()

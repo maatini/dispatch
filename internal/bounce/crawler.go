@@ -10,8 +10,8 @@ import (
 
 	"github.com/nats-io/nats.go"
 
-	"codymail-go/internal/domain"
-	"codymail-go/internal/natsutil"
+	"dispatch/internal/domain"
+	"dispatch/internal/natsutil"
 )
 
 var traceIDRegex = regexp.MustCompile(`X-CodyMail-TraceId:\s*([0-9a-f-]{36})`)

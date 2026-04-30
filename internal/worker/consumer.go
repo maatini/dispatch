@@ -7,7 +7,7 @@ import (
 
 	"github.com/nats-io/nats.go"
 
-	"codymail-go/internal/natsutil"
+	"dispatch/internal/natsutil"
 )
 
 // Consumer pulls messages from NATS JetStream and dispatches them to Processor.

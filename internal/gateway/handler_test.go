@@ -9,8 +9,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"codymail-go/internal/config"
-	"codymail-go/internal/domain"
+	"dispatch/internal/config"
+	"dispatch/internal/domain"
 )
 
 // stubs
