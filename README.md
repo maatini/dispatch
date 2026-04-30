@@ -14,7 +14,7 @@ Multi-tenantes E-Mail-Delivery-System. REST-Eingang → NATS JetStream → Micro
 
 ```
 Client
-  POST /codymail/api/v1/mail/send
+  POST /dispatch/api/v1/mail/send
   └── mail-gateway
         1. Validierung (Format, Größe, MIME)
         2. Sender-Lookup (NATS KV senders, In-Memory-Cache 10 min)
@@ -51,7 +51,7 @@ Eine detaillierte Architekturbeschreibung mit Datenfluss-Diagrammen und NATS-Top
 
 | Service | Endpunkt | Zweck |
 |---------|----------|-------|
-| `cmd/mail-gateway` | `POST /codymail/api/v1/mail/send` | HTTP-Eingang, Validierung, Publish |
+| `cmd/mail-gateway` | `POST /dispatch/api/v1/mail/send` | HTTP-Eingang, Validierung, Publish |
 | `cmd/mail-worker` | — | NATS-Consumer, MS-Graph-Delivery |
 | `cmd/mail-admin` | `POST /graphql` | Sender-CRUD, Audit-Abfragen |
 | `cmd/bouncemanagement` | — | NDR-Crawler, Bounce-Aufzeichnung |
@@ -172,7 +172,7 @@ Mutation-Tests laufen mit [gremlins](https://github.com/go-gremlins/gremlins) (`
 ### Mail senden
 
 ```
-POST /codymail/api/v1/mail/send
+POST /dispatch/api/v1/mail/send
 Content-Type: application/json
 
 {

@@ -14,7 +14,7 @@ import (
 	"dispatch/internal/natsutil"
 )
 
-var traceIDRegex = regexp.MustCompile(`X-CodyMail-TraceId:\s*([0-9a-f-]{36})`)
+var traceIDRegex = regexp.MustCompile(`X-Dispatch-TraceId:\s*([0-9a-f-]{36})`)
 
 type graphClient interface {
 	GetUnreadMessages(ctx context.Context, mailbox string) ([]NDRMessage, error)

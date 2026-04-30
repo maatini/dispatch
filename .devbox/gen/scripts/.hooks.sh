@@ -1,4 +1,4 @@
-echo 'Devbox-Umgebung für CodyMail (Go) geladen'
+echo 'Devbox-Umgebung für Dispatch (Go) geladen'
 echo '-------------------------------------------'
 go version
 echo '-------------------------------------------'

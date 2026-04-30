@@ -73,7 +73,7 @@ Production-grade, deployed on Kubernetes (AKS).
 
 | Command | Purpose |
 |---------|---------|
-| `cmd/mail-gateway` | HTTP REST entry point (`POST /codymail/api/v1/mail/send`) |
+| `cmd/mail-gateway` | HTTP REST entry point (`POST /dispatch/api/v1/mail/send`) |
 | `cmd/mail-worker` | NATS JetStream consumer → MS Graph email delivery |
 | `cmd/mail-admin` | GraphQL API for tenant/sender management and audit logs |
 | `cmd/bouncemanagement` | Scheduled NDR/bounce crawler via MS Graph |

@@ -40,7 +40,7 @@ Dispatch ist ein mandantenfähiges E-Mail-Delivery-System. Eine REST-Schnittstel
 
 | Service | Einstiegspunkt | Primäre Aufgabe |
 |---|---|---|
-| `mail-gateway` | `POST /codymail/api/v1/mail/send` | Validierung, Quota, Spam-Dedup, NATS-Publish |
+| `mail-gateway` | `POST /dispatch/api/v1/mail/send` | Validierung, Quota, Spam-Dedup, NATS-Publish |
 | `mail-worker` | NATS Pull-Consumer `mail-worker` | E-Mail-Versand via MS Graph, Audit, Dead-Letter |
 | `mail-admin` | GraphQL `/graphql` | Sender-Verwaltung, Stream-Abfragen, Reprocessing |
 | `bouncemanagement` | Ticker (15 min) | NDR-Crawler, Trace-ID-Extraktion, Bounce-Records |
@@ -50,7 +50,7 @@ Dispatch ist ein mandantenfähiges E-Mail-Delivery-System. Eine REST-Schnittstel
 ## Mail-Versand: Datenfluss
 
 ```
-HTTP POST /codymail/api/v1/mail/send
+HTTP POST /dispatch/api/v1/mail/send
         │
         ▼
 ┌───────────────────────────────────┐

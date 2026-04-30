@@ -69,7 +69,7 @@ func sendRequest(t *testing.T, h *Handler, body any) *httptest.ResponseRecorder 
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := httptest.NewRequest(http.MethodPost, "/codymail/api/v1/mail/send", bytes.NewReader(data))
+	req := httptest.NewRequest(http.MethodPost, "/dispatch/api/v1/mail/send", bytes.NewReader(data))
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 	h.Router().ServeHTTP(rr, req)
