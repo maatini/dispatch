@@ -55,7 +55,7 @@ func TestLoad_Defaults(t *testing.T) {
 }
 
 func TestLoad_MissingNatsURL(t *testing.T) {
-	// leave NATS_URL unset
+	t.Setenv("NATS_URL", "")
 	t.Setenv("MS_GRAPH_TENANT_ID", "tenant")
 	t.Setenv("MS_GRAPH_CLIENT_ID", "client")
 	t.Setenv("MS_GRAPH_CLIENT_SECRET", "secret")
