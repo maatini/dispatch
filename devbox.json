@@ -9,7 +9,7 @@
     "DOCKER_API_VERSION": "1.41",
     "TESTCONTAINERS_RYUK_DISABLED": "true",
     "GOFLAGS": "-mod=mod",
-    "CODYMAIL_ENV": "dev"
+    "DISPATCH_ENV": "dev"
   },
   "shell": {
     "init_hook": [

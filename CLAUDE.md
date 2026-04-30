@@ -107,27 +107,27 @@ NATS KV Buckets (State):
   spam      → SHA-256-Hashes, TTL 60s
 
 NATS Streams (Events):
-  CODYMAIL_MAILS        → Broker-Payload (Work Queue)
-  CODYMAIL_AUDIT        → Delivery-Ergebnisse (DELIVERED / FAILED)
-  CODYMAIL_DEAD_LETTERS → nicht-parsbare Nachrichten
-  CODYMAIL_BOUNCES      → NDR-Ergebnisse aus Bounce Crawler
+  DISPATCH_MAILS        → Broker-Payload (Work Queue)
+  DISPATCH_AUDIT        → Delivery-Ergebnisse (DELIVERED / FAILED)
+  DISPATCH_DEAD_LETTERS → nicht-parsbare Nachrichten
+  DISPATCH_BOUNCES      → NDR-Ergebnisse aus Bounce Crawler
 
 REST (Gateway) → 5-Stage Validation (Format / Sender-Lookup / Domain / Quota / Spam)
-    → NATS JetStream publish → CODYMAIL_MAILS
+    → NATS JetStream publish → DISPATCH_MAILS
         → Fehler: HTTP 503 (kein Fallback, kein Retry im Gateway)
         → Erfolg: HTTP 202
     → Worker (NATS Consumer, explicit ACK)
     → MS Graph API
-    → NATS CODYMAIL_AUDIT (DELIVERED / FAILED)
+    → NATS DISPATCH_AUDIT (DELIVERED / FAILED)
 ```
 
 **Resilience:**
 - NATS unreachable at publish time → HTTP 503 immediately, no silent retry
 - Quota KV error → fail-closed (HTTP 503), never bypass
 - MS Graph 429/5xx → no NATS ACK, JetStream redelivers; no audit entry written
-- MS Graph 4xx → ACK (poison pill), append FAILED to CODYMAIL_AUDIT
-- Malformed JSON → ACK, append to CODYMAIL_DEAD_LETTERS
-- Worker crash after Graph success, before ACK → idempotent dedup via CODYMAIL_AUDIT lookup
+- MS Graph 4xx → ACK (poison pill), append FAILED to DISPATCH_AUDIT
+- Malformed JSON → ACK, append to DISPATCH_DEAD_LETTERS
+- Worker crash after Graph success, before ACK → idempotent dedup via DISPATCH_AUDIT lookup
 
 ### Key Domain Concepts
 
@@ -136,7 +136,7 @@ REST (Gateway) → 5-Stage Validation (Format / Sender-Lookup / Domain / Quota /
 - **Sender**: Tenant config — stored in NATS KV bucket `senders`; maps appTag to technical sender email, daily quota, allowed domains. In-memory cached in gateway (TTL 10 min).
 - **Quota**: Rolling 24h window, counts recipients (TO+CC+BCC). State in NATS KV bucket `quota` per appTag, updated via optimistic CAS (`nats.KeyValue.Update`). Fail-closed: any KV error → HTTP 503, never bypass.
 - **Spam cache**: SHA-256 fingerprint over (appTag, subject, recipients, body lengths). Stored in NATS KV bucket `spam` with bucket-level TTL of 60s. Per-pod in-memory fallback acceptable (minor false-negative risk in multi-replica deployments).
-- **Bounce matching**: 3-tier — trace ID in NDR body → attachment scan → recipient lookup in CODYMAIL_AUDIT stream
+- **Bounce matching**: 3-tier — trace ID in NDR body → attachment scan → recipient lookup in DISPATCH_AUDIT stream
 
 **Error types** (all in `internal/domain/errors.go`):
 
@@ -147,8 +147,8 @@ REST (Gateway) → 5-Stage Validation (Format / Sender-Lookup / Domain / Quota /
 | `NatsPublishError` | 503 | — | — |
 | `QuotaStateError` (fail-closed) | 503 | — | — |
 | `GraphTransientError` (429/5xx) | — | No | — |
-| `GraphPermanentError` (4xx) | — | Yes | `CODYMAIL_AUDIT` (FAILED) |
-| `ParseError` | — | Yes | `CODYMAIL_DEAD_LETTERS` |
+| `GraphPermanentError` (4xx) | — | Yes | `DISPATCH_AUDIT` (FAILED) |
+| `ParseError` | — | Yes | `DISPATCH_DEAD_LETTERS` |
 
 ### Naming Conventions
 
@@ -266,12 +266,12 @@ MS_GRAPH_SENDER_EMAIL
 **Optional (mit Defaults):**
 ```
 PORT=8080
-CODYMAIL_SPAM_TIMEOUT_SECONDS=60
-CODYMAIL_VALIDATION_MAX_BODY_SIZE=10000000
-CODYMAIL_VALIDATION_MIME_WHITELIST=application/pdf,image/jpeg,...
-CODYMAIL_MAX_TOTAL_ATTACHMENT_SIZE_MB=20
-CODYMAIL_NATS_PUBLISH_TIMEOUT_SECONDS=5
-CODYMAIL_GRAPH_RATE_LIMITER_SKIP_SLEEP=false
+DISPATCH_SPAM_TIMEOUT_SECONDS=60
+DISPATCH_VALIDATION_MAX_BODY_SIZE=10000000
+DISPATCH_VALIDATION_MIME_WHITELIST=application/pdf,image/jpeg,...
+DISPATCH_MAX_TOTAL_ATTACHMENT_SIZE_MB=20
+DISPATCH_NATS_PUBLISH_TIMEOUT_SECONDS=5
+DISPATCH_GRAPH_RATE_LIMITER_SKIP_SLEEP=false
 ```
 
 Config-Struct in `internal/config/config.go` mit explizitem `Load() (Config, error)`.

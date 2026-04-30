@@ -192,6 +192,18 @@ func (g *callCheckGraph) SendEmail(_ context.Context, _ domain.MailRequestDO) er
 	return errors.New("should not be called")
 }
 
+// stubAttFetcher is the attachment fetcher stub.
+type stubAttFetcher struct {
+	fetchErr  error
+	cleanedUp bool
+}
+
+func (s *stubAttFetcher) Fetch(atts []domain.AttachmentDO) ([]domain.AttachmentDO, error) {
+	return atts, s.fetchErr
+}
+
+func (s *stubAttFetcher) Cleanup(_ []domain.AttachmentDO) { s.cleanedUp = true }
+
 // failJS simulates a NATS publish failure.
 type failJS struct{}
 
@@ -211,4 +223,94 @@ func TestHandle_DeadLetterPublishError_DoesNotPanic(t *testing.T) {
 	msg := &nats.Msg{Data: []byte("not json"), Header: nats.Header{}}
 	msg.Header.Set("traceId", "t-dl")
 	proc.Handle(context.Background(), msg)
+}
+
+func TestHandle_AttachmentFetchError_NoAck(t *testing.T) {
+	att := &stubAttFetcher{fetchErr: errors.New("object store down")}
+	proc := &Processor{graph: &stubGraph{}, delivered: newStubKV(), js: &captureJS{}, attStore: att}
+
+	req := domain.MailRequestDO{
+		TraceID:     "trace-att",
+		Attachments: []domain.AttachmentDO{{Name: "f.pdf"}},
+	}
+	acked := false
+	msg := buildMsg(req)
+	msg.Subject = "test"
+	// We cannot intercept Ack on *nats.Msg directly in unit tests, so we verify
+	// the audit stream has no records (indicating no ack path was taken).
+	js := &captureJS{}
+	proc.js = js
+	proc.Handle(context.Background(), msg)
+
+	if len(js.records) != 0 {
+		t.Errorf("attachment fetch error must not write audit; got %d records", len(js.records))
+	}
+	_ = acked
+}
+
+func TestHandle_AttachmentCleanupAfterDelivery(t *testing.T) {
+	att := &stubAttFetcher{}
+	js := &captureJS{}
+	kv := newStubKV()
+	proc := &Processor{graph: &stubGraph{}, delivered: kv, js: js, attStore: att}
+
+	req := domain.MailRequestDO{
+		TraceID:     "trace-clean",
+		Attachments: []domain.AttachmentDO{{Name: "f.pdf"}},
+		Sender:      "s@e.com",
+		Recipients:  []string{"r@e.com"},
+	}
+	proc.Handle(context.Background(), buildMsg(req))
+
+	if !att.cleanedUp {
+		t.Error("attachment cleanup must be called after successful delivery")
+	}
+}
+
+func TestHandle_AttachmentCleanupAfterPermanentError(t *testing.T) {
+	att := &stubAttFetcher{}
+	js := &captureJS{}
+	proc := &Processor{
+		graph:     &stubGraph{err: &msgraph.GraphPermanentError{StatusCode: 400, Body: "bad"}},
+		delivered: newStubKV(),
+		js:        js,
+		attStore:  att,
+	}
+
+	req := domain.MailRequestDO{
+		TraceID:     "trace-perm",
+		Attachments: []domain.AttachmentDO{{Name: "f.pdf"}},
+		Sender:      "s@e.com",
+		Recipients:  []string{"r@e.com"},
+	}
+	proc.Handle(context.Background(), buildMsg(req))
+
+	if !att.cleanedUp {
+		t.Error("attachment cleanup must be called after permanent graph error")
+	}
+}
+
+func TestHandle_TestMode_AttachmentCleanup(t *testing.T) {
+	att := &stubAttFetcher{}
+	js := &captureJS{}
+	kv := newStubKV()
+	proc := &Processor{
+		graph:     &callCheckGraph{onCall: func() {}},
+		delivered: kv,
+		js:        js,
+		attStore:  att,
+	}
+
+	req := domain.MailRequestDO{
+		TraceID:     "trace-test",
+		Test:        true,
+		Attachments: []domain.AttachmentDO{{Name: "f.pdf"}},
+		Sender:      "s@e.com",
+		Recipients:  []string{"r@e.com"},
+	}
+	proc.Handle(context.Background(), buildMsg(req))
+
+	if !att.cleanedUp {
+		t.Error("attachment cleanup must be called after test-mode delivery")
+	}
 }

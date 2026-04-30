@@ -41,6 +41,12 @@ func (s *stubAttStore) Upload(_ context.Context, _ string, atts []domain.Attachm
 	return atts, nil
 }
 
+type failAttStore struct{}
+
+func (s *failAttStore) Upload(_ context.Context, _ string, _ []domain.AttachmentDO) ([]domain.AttachmentDO, error) {
+	return nil, errors.New("object store unavailable")
+}
+
 func defaultCfg() config.Config {
 	return config.Config{
 		MaxBodySize:          10_000_000,
@@ -167,5 +173,49 @@ func TestHandleSend_QuotaStateError(t *testing.T) {
 	rr := sendRequest(t, h, body)
 	if rr.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503, got %d", rr.Code)
+	}
+}
+
+func TestHandleSend_AttachmentUploadError(t *testing.T) {
+	h := NewHandler(defaultCfg(), &stubSenders{sender: defaultSender()}, &stubQuota{}, &stubSpam{}, &stubPublisher{}, &failAttStore{})
+	body := map[string]any{
+		"appTag":     "test",
+		"recipients": []string{"user@example.com"},
+		"subject":    "Test",
+		"attachments": []map[string]any{
+			{"name": "file.pdf", "mimeType": "application/pdf", "content": "dGVzdA=="},
+		},
+	}
+	rr := sendRequest(t, h, body)
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestHandleHealth(t *testing.T) {
+	h := buildHandler(&stubSenders{sender: defaultSender()}, &stubQuota{}, &stubSpam{}, &stubPublisher{})
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rr := httptest.NewRecorder()
+	h.Router().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type: want application/json, got %s", ct)
+	}
+}
+
+func TestHandleSend_WithCCAndBCC(t *testing.T) {
+	h := buildHandler(&stubSenders{sender: defaultSender()}, &stubQuota{}, &stubSpam{}, &stubPublisher{})
+	body := map[string]any{
+		"appTag":        "test",
+		"recipients":    []string{"to@example.com"},
+		"ccRecipients":  []string{"cc@example.com"},
+		"bccRecipients": []string{"bcc@example.com"},
+		"subject":       "Hello",
+	}
+	rr := sendRequest(t, h, body)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", rr.Code, rr.Body.String())
 	}
 }

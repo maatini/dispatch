@@ -22,13 +22,13 @@ Client
         4. Quota-Check (NATS KV quota, rolling 24h, CAS, fail-closed)
         5. Spam-Deduplizierung (NATS KV spam, TTL-Bucket)
         6. Anhänge → NATS Object Store attachments (key: {traceID}/{index})
-        7. Publish → NATS JetStream CODYMAIL_MAILS (Anhangsinhalte entfernt)
+        7. Publish → NATS JetStream DISPATCH_MAILS (Anhangsinhalte entfernt)
            ↳ Fehler → HTTP 503 (kein Retry, kein Fallback)
            ↳ Erfolg → HTTP 202
 
   NATS JetStream
   └── mail-worker (durable Pull-Consumer)
-        1. JSON-Deserialisierung (→ CODYMAIL_DEAD_LETTERS bei Fehler)
+        1. JSON-Deserialisierung (→ DISPATCH_DEAD_LETTERS bei Fehler)
         2. Dedup via NATS KV delivered (7-Tage-TTL)
         3. Anhänge aus NATS Object Store laden
            ↳ Fehler → kein ACK (Redelivery)
@@ -36,11 +36,11 @@ Client
         5. sendMail / Upload-Session via MS Graph API
            ↳ 429/5xx → kein ACK, JetStream redelivert
                         Retry-After-Header wird ausgewertet (max 30 s)
-           ↳ 4xx      → ACK + FAILED in CODYMAIL_AUDIT
-           ↳ Erfolg   → ACK + DELIVERED in CODYMAIL_AUDIT + Object Store cleanup
+           ↳ 4xx      → ACK + FAILED in DISPATCH_AUDIT
+           ↳ Erfolg   → ACK + DELIVERED in DISPATCH_AUDIT + Object Store cleanup
 
   mail-admin    → GraphQL-API: Sender-Verwaltung, Audit-Log, Dead-Letters
-  bouncemanagement → MS-Graph-Poller (alle 15 min) → CODYMAIL_BOUNCES
+  bouncemanagement → MS-Graph-Poller (alle 15 min) → DISPATCH_BOUNCES
 ```
 
 **State-Backend: ausschließlich NATS** — kein PostgreSQL, kein Redis, kein externes System.
@@ -64,10 +64,10 @@ Eine detaillierte Architekturbeschreibung mit Datenfluss-Diagrammen und NATS-Top
 | KV | `quota` | Rolling-24h-Verbrauch pro appTag (optimistic CAS) |
 | KV | `spam` | SHA-256-Fingerprints mit TTL-Ablauf |
 | KV | `delivered` | Dedup-Index für Worker (7-Tage-TTL) |
-| Stream | `CODYMAIL_MAILS` | Work-Queue (WorkQueuePolicy, 72h Retention) |
-| Stream | `CODYMAIL_AUDIT` | Delivery-Ergebnisse (DELIVERED / FAILED / TEST_SUCCESS) |
-| Stream | `CODYMAIL_DEAD_LETTERS` | Nicht-parsbare Nachrichten |
-| Stream | `CODYMAIL_BOUNCES` | NDR-Ergebnisse aus Bounce-Crawler |
+| Stream | `DISPATCH_MAILS` | Work-Queue (WorkQueuePolicy, 72h Retention) |
+| Stream | `DISPATCH_AUDIT` | Delivery-Ergebnisse (DELIVERED / FAILED / TEST_SUCCESS) |
+| Stream | `DISPATCH_DEAD_LETTERS` | Nicht-parsbare Nachrichten |
+| Stream | `DISPATCH_BOUNCES` | NDR-Ergebnisse aus Bounce-Crawler |
 | Object Store | `attachments` | Anhangsdaten entkoppelt vom JetStream-Limit (72h TTL) |
 
 ## Konfiguration
@@ -89,12 +89,12 @@ PORT=8080
 MS_GRAPH_BOUNCE_MAILBOX           # default: MS_GRAPH_SENDER_EMAIL
 MS_GRAPH_MOCK_TOKEN=              # OAuth2 überspringen, Credentials optional (nur Dev)
 MS_GRAPH_PROXY_URL=               # Graph-Calls durch Dev Proxy routen (z. B. http://localhost:8000)
-CODYMAIL_SPAM_TIMEOUT_SECONDS=60
-CODYMAIL_VALIDATION_MAX_BODY_SIZE=10000000
-CODYMAIL_VALIDATION_MIME_WHITELIST=application/pdf,image/jpeg,image/png,...
-CODYMAIL_MAX_TOTAL_ATTACHMENT_SIZE_MB=20
-CODYMAIL_NATS_PUBLISH_TIMEOUT_SECONDS=5
-CODYMAIL_GRAPH_RATE_LIMITER_SKIP_SLEEP=false
+DISPATCH_SPAM_TIMEOUT_SECONDS=60
+DISPATCH_VALIDATION_MAX_BODY_SIZE=10000000
+DISPATCH_VALIDATION_MIME_WHITELIST=application/pdf,image/jpeg,image/png,...
+DISPATCH_MAX_TOTAL_ATTACHMENT_SIZE_MB=20
+DISPATCH_NATS_PUBLISH_TIMEOUT_SECONDS=5
+DISPATCH_GRAPH_RATE_LIMITER_SKIP_SLEEP=false
 ```
 
 ## Lokale Entwicklung
@@ -122,8 +122,8 @@ MS_GRAPH_TENANT_ID=<azure-tenant-id>
 MS_GRAPH_CLIENT_ID=<client-id>
 MS_GRAPH_CLIENT_SECRET=<client-secret>
 MS_GRAPH_SENDER_EMAIL=noreply-dev@example.com
-CODYMAIL_SPAM_TIMEOUT_SECONDS=5
-CODYMAIL_GRAPH_RATE_LIMITER_SKIP_SLEEP=true
+DISPATCH_SPAM_TIMEOUT_SECONDS=5
+DISPATCH_GRAPH_RATE_LIMITER_SKIP_SLEEP=true
 ```
 
 ### Mit MS Graph Developer Proxy (kein Azure-Account erforderlich)

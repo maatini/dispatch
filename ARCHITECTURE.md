@@ -22,10 +22,10 @@ Dispatch ist ein mandantenfähiges E-Mail-Delivery-System. Eine REST-Schnittstel
 │                                                                     │
 │  Streams                       KV Buckets           Object Store   │
 │  ─────────────────────         ────────────         ────────────── │
-│  CODYMAIL_MAILS (72h)          senders              attachments    │
-│  CODYMAIL_AUDIT (30d)          quota (25h TTL)      (72h TTL)     │
-│  CODYMAIL_DEAD_LETTERS (30d)   spam (60s TTL)                      │
-│  CODYMAIL_BOUNCES (30d)        delivered (7d TTL)                  │
+│  DISPATCH_MAILS (72h)          senders              attachments    │
+│  DISPATCH_AUDIT (30d)          quota (25h TTL)      (72h TTL)     │
+│  DISPATCH_DEAD_LETTERS (30d)   spam (60s TTL)                      │
+│  DISPATCH_BOUNCES (30d)        delivered (7d TTL)                  │
 └─────────────────────────────────────────────────────────────────────┘
          ▲
          │
@@ -81,7 +81,7 @@ Attachments → NATS Object Store
 (key: {traceID}/{index}, Content gecleart)
         │
         ▼
-NATS Publish → CODYMAIL_MAILS
+NATS Publish → DISPATCH_MAILS
 (MailRequestDO: traceID, sender, ObjectKeys, ...)
         │
         ▼
@@ -128,10 +128,10 @@ NATS Consumer (pull, explicit ACK, 30s ack-wait)
 
 | Ressource | Gateway | Worker | Admin | Bouncemanagement |
 |---|---|---|---|---|
-| `CODYMAIL_MAILS` | **publish** | **consume** | reprocess (publish) | — |
-| `CODYMAIL_AUDIT` | — | **publish** | read | — |
-| `CODYMAIL_DEAD_LETTERS` | — | **publish** | read | — |
-| `CODYMAIL_BOUNCES` | — | — | read | **publish** |
+| `DISPATCH_MAILS` | **publish** | **consume** | reprocess (publish) | — |
+| `DISPATCH_AUDIT` | — | **publish** | read | — |
+| `DISPATCH_DEAD_LETTERS` | — | **publish** | read | — |
+| `DISPATCH_BOUNCES` | — | — | read | **publish** |
 | KV `senders` | read (cache) | — | **read/write** | — |
 | KV `quota` | **read/write** (CAS) | — | — | — |
 | KV `spam` | **read/write** | — | — | — |
@@ -218,10 +218,10 @@ MS_GRAPH_SENDER_EMAIL
 **Optionale Felder (Auswahl):**
 ```
 PORT=8080
-CODYMAIL_SPAM_TIMEOUT_SECONDS=60
-CODYMAIL_VALIDATION_MAX_BODY_SIZE=10000000
-CODYMAIL_MAX_TOTAL_ATTACHMENT_SIZE_MB=20
-CODYMAIL_GRAPH_RATE_LIMITER_SKIP_SLEEP=false
+DISPATCH_SPAM_TIMEOUT_SECONDS=60
+DISPATCH_VALIDATION_MAX_BODY_SIZE=10000000
+DISPATCH_MAX_TOTAL_ATTACHMENT_SIZE_MB=20
+DISPATCH_GRAPH_RATE_LIMITER_SKIP_SLEEP=false
 MS_GRAPH_PROXY_URL=           # Dev Proxy (http://localhost:8000)
 MS_GRAPH_MOCK_TOKEN=          # Überspringt OAuth2, macht Credentials optional
 ```

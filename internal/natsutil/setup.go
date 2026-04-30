@@ -8,10 +8,10 @@ import (
 )
 
 const (
-	StreamMails      = "CODYMAIL_MAILS"
-	StreamAudit      = "CODYMAIL_AUDIT"
-	StreamDeadLetter = "CODYMAIL_DEAD_LETTERS"
-	StreamBounces    = "CODYMAIL_BOUNCES"
+	StreamMails      = "DISPATCH_MAILS"
+	StreamAudit      = "DISPATCH_AUDIT"
+	StreamDeadLetter = "DISPATCH_DEAD_LETTERS"
+	StreamBounces    = "DISPATCH_BOUNCES"
 
 	SubjectMails      = "cody.mailing.job.request.mails"
 	SubjectAudit      = "cody.mailing.audit"
