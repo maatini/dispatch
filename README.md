@@ -21,7 +21,8 @@ Client
         3. Domain-Whitelist-Check
         4. Quota-Check (NATS KV quota, rolling 24h, CAS, fail-closed)
         5. Spam-Deduplizierung (NATS KV spam, TTL-Bucket)
-        6. Publish → NATS JetStream CODYMAIL_MAILS
+        6. Anhänge → NATS Object Store attachments (key: {traceID}/{index})
+        7. Publish → NATS JetStream CODYMAIL_MAILS (Anhangsinhalte entfernt)
            ↳ Fehler → HTTP 503 (kein Retry, kein Fallback)
            ↳ Erfolg → HTTP 202
 
@@ -29,17 +30,22 @@ Client
   └── mail-worker (durable Pull-Consumer)
         1. JSON-Deserialisierung (→ CODYMAIL_DEAD_LETTERS bei Fehler)
         2. Dedup via NATS KV delivered (7-Tage-TTL)
-        3. Test-Modus: Audit-Eintrag ohne MS-Graph-Call
-        4. sendMail / Upload-Session via MS Graph API
+        3. Anhänge aus NATS Object Store laden
+           ↳ Fehler → kein ACK (Redelivery)
+        4. Test-Modus: Audit-Eintrag ohne MS-Graph-Call
+        5. sendMail / Upload-Session via MS Graph API
            ↳ 429/5xx → kein ACK, JetStream redelivert
+                        Retry-After-Header wird ausgewertet (max 30 s)
            ↳ 4xx      → ACK + FAILED in CODYMAIL_AUDIT
-           ↳ Erfolg   → ACK + DELIVERED in CODYMAIL_AUDIT
+           ↳ Erfolg   → ACK + DELIVERED in CODYMAIL_AUDIT + Object Store cleanup
 
   mail-admin    → GraphQL-API: Sender-Verwaltung, Audit-Log, Dead-Letters
   bouncemanagement → MS-Graph-Poller (alle 15 min) → CODYMAIL_BOUNCES
 ```
 
 **State-Backend: ausschließlich NATS** — kein PostgreSQL, kein Redis, kein externes System.
+
+Eine detaillierte Architekturbeschreibung mit Datenfluss-Diagrammen und NATS-Topologie befindet sich in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Services
 
@@ -62,6 +68,7 @@ Client
 | Stream | `CODYMAIL_AUDIT` | Delivery-Ergebnisse (DELIVERED / FAILED / TEST_SUCCESS) |
 | Stream | `CODYMAIL_DEAD_LETTERS` | Nicht-parsbare Nachrichten |
 | Stream | `CODYMAIL_BOUNCES` | NDR-Ergebnisse aus Bounce-Crawler |
+| Object Store | `attachments` | Anhangsdaten entkoppelt vom JetStream-Limit (72h TTL) |
 
 ## Konfiguration
 
@@ -69,9 +76,9 @@ Client
 
 ```
 NATS_URL
-MS_GRAPH_TENANT_ID
-MS_GRAPH_CLIENT_ID
-MS_GRAPH_CLIENT_SECRET
+MS_GRAPH_TENANT_ID      \
+MS_GRAPH_CLIENT_ID       } entfallen wenn MS_GRAPH_MOCK_TOKEN gesetzt ist
+MS_GRAPH_CLIENT_SECRET  /
 MS_GRAPH_SENDER_EMAIL
 ```
 
@@ -80,6 +87,8 @@ MS_GRAPH_SENDER_EMAIL
 ```
 PORT=8080
 MS_GRAPH_BOUNCE_MAILBOX           # default: MS_GRAPH_SENDER_EMAIL
+MS_GRAPH_MOCK_TOKEN=              # OAuth2 überspringen, Credentials optional (nur Dev)
+MS_GRAPH_PROXY_URL=               # Graph-Calls durch Dev Proxy routen (z. B. http://localhost:8000)
 CODYMAIL_SPAM_TIMEOUT_SECONDS=60
 CODYMAIL_VALIDATION_MAX_BODY_SIZE=10000000
 CODYMAIL_VALIDATION_MIME_WHITELIST=application/pdf,image/jpeg,image/png,...
@@ -93,16 +102,16 @@ CODYMAIL_GRAPH_RATE_LIMITER_SKIP_SLEEP=false
 ```bash
 # Voraussetzung: devbox (https://www.jetpack.io/devbox)
 devbox shell
+```
 
-# NATS starten
-devbox run up
+### Mit echten MS-Graph-Credentials
 
-# Services einzeln starten (in separaten Terminals)
+```bash
+devbox run up   # NATS via Docker Compose starten
+
 export $(grep -v '^#' .env.local | xargs)
 go run ./cmd/mail-gateway
 go run ./cmd/mail-worker
-go run ./cmd/mail-admin
-go run ./cmd/bouncemanagement
 ```
 
 Beispiel `.env.local` (nicht einchecken):
@@ -117,19 +126,46 @@ CODYMAIL_SPAM_TIMEOUT_SECONDS=5
 CODYMAIL_GRAPH_RATE_LIMITER_SKIP_SLEEP=true
 ```
 
+### Mit MS Graph Developer Proxy (kein Azure-Account erforderlich)
+
+Der [Microsoft Graph Developer Proxy](https://learn.microsoft.com/en-us/microsoft-graph/msgraph-developer-proxy/overview) mockt alle genutzten Graph-Endpunkte lokal.
+
+```bash
+devbox run up-proxy        # NATS + Dev Proxy (Port 8000) starten
+devbox run run-worker-dev  # Worker mit Mock-Token gegen Dev Proxy
+devbox run run-gateway-dev # Gateway mit Mock-Token gegen lokales NATS
+```
+
+Die Proxy-Konfiguration liegt in [`dev-proxy/devproxyrc.json`](dev-proxy/devproxyrc.json), Mock-Antworten in [`dev-proxy/mocks.json`](dev-proxy/mocks.json).
+
 NATS Monitoring: http://localhost:8222
 
 ## Build & Test
 
 ```bash
-devbox run build          # go build ./...
-devbox run test           # alle Unit-Tests
-devbox run test-gateway   # nur Gateway
-devbox run test-worker    # nur Worker
-devbox run lint           # golangci-lint
-devbox run coverage       # Tests + Coverage-Report
+devbox run build             # go build ./...
+devbox run test              # alle Unit-Tests
+devbox run test-gateway      # nur Gateway
+devbox run test-worker       # nur Worker
+devbox run lint              # golangci-lint
+devbox run coverage          # Tests + Coverage-Bericht (ASCII)
+devbox run coverage-html     # Tests + Coverage-Bericht (HTML → coverage.html)
 devbox run test-integration  # Integrationstests (Docker erforderlich)
+devbox run mutate            # Mutations-Tests (gremlins) für Core-Packages
+devbox run metrics           # Coverage + Mutations in einem Lauf
 ```
+
+### Test-Metriken (Stand main)
+
+| Metrik | Wert |
+|--------|------|
+| Unit-Tests | 46 |
+| Statement Coverage (Core-Packages) | 67 % |
+| Mutation Score (gateway) | 100 % (1/1 killed) |
+| Mutation Score (quota) | 100 % (3/3 killed) |
+| Mutation Score Threshold | ≥ 70 % (efficacy + mutation-coverage) |
+
+Mutation-Tests laufen mit [gremlins](https://github.com/go-gremlins/gremlins) (`go tool gremlins unleash`) auf den Packages `internal/gateway`, `internal/quota`, `internal/spam`, `internal/worker`, `internal/pii` und `internal/hash`. Die Schwellwerte sind in [`.gremlins.yaml`](.gremlins.yaml) hinterlegt.
 
 ## API
 
@@ -165,7 +201,7 @@ Content-Type: application/json
 | `202` | Nachricht an NATS übergeben |
 | `400` | Validierungsfehler (Pflichtfelder, Domain, Spam, MIME) |
 | `429` | Tages-Quota überschritten (`X-RateLimit-Limit`, `X-RateLimit-Remaining`) |
-| `503` | NATS nicht erreichbar oder Quota-State-Fehler (Client soll wiederholen) |
+| `503` | NATS nicht erreichbar, Quota-State-Fehler oder Attachment-Upload fehlgeschlagen |
 
 ### Health
 
@@ -206,16 +242,18 @@ query {
 |------------|-----------|
 | NATS beim Publish nicht erreichbar | HTTP 503, kein Retry im Gateway |
 | Quota KV-Fehler | HTTP 503 (fail-closed, niemals bypass) |
-| MS Graph 429 / 5xx | Kein NATS-ACK, JetStream redelivert |
+| Attachment-Upload fehlgeschlagen | HTTP 503, kein Retry im Gateway |
+| MS Graph 429 / 5xx | Kein NATS-ACK, JetStream redelivert; `Retry-After`-Header wird ausgewertet (max 30 s) |
 | MS Graph 4xx (außer 429) | ACK, FAILED in Audit |
 | JSON-Parse-Fehler im Worker | ACK, Dead-Letter-Stream |
 | Worker-Absturz nach Graph-Erfolg | Dedup via KV `delivered` verhindert Doppelversand |
+| Worker-Absturz vor Object-Store-Cleanup | 72h-TTL bereinigt verwaiste Anhangsdaten |
 | E-Mail-Adressen in Logs | Immer maskiert: `u***@domain.com` |
 
 ## Stack
 
 - **Go 1.24+**
-- **NATS JetStream** — Message-Broker, KV-Store, State-Backend
+- **NATS JetStream** — Message-Broker, KV-Store, Object Store, State-Backend
 - **Microsoft Graph API v1.0** — E-Mail-Versand via Microsoft 365
 - **`github.com/go-chi/chi/v5`** — HTTP-Routing
 - **`github.com/go-playground/validator/v10`** — Request-Validierung
