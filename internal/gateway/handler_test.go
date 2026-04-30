@@ -120,6 +120,13 @@ func TestHandleSend_QuotaExceeded(t *testing.T) {
 	if rr.Code != http.StatusTooManyRequests {
 		t.Fatalf("expected 429, got %d", rr.Code)
 	}
+	// defaultSender().DailyQuota=100, qe.Current=10 → Remaining=max(0,100-10)=90
+	if got := rr.Header().Get("X-RateLimit-Limit"); got != "100" {
+		t.Errorf("X-RateLimit-Limit: want 100, got %s", got)
+	}
+	if got := rr.Header().Get("X-RateLimit-Remaining"); got != "90" {
+		t.Errorf("X-RateLimit-Remaining: want 90, got %s", got)
+	}
 }
 
 func TestHandleSend_SpamDetected(t *testing.T) {

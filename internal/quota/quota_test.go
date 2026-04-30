@@ -182,3 +182,28 @@ func TestCurrentUsage_KVError(t *testing.T) {
 		t.Fatal("expected error on KV failure")
 	}
 }
+
+// alwaysCASConflictKV always returns a JetStream CAS conflict on write,
+// forcing Check() to exhaust all maxCASRetries.
+type alwaysCASConflictKV struct{}
+
+func (m *alwaysCASConflictKV) Get(_ string) (nats.KeyValueEntry, error) {
+	return nil, nats.ErrKeyNotFound
+}
+
+func (m *alwaysCASConflictKV) Create(_ string, _ []byte) (uint64, error) {
+	return 0, &mockWrongSeqErr{}
+}
+
+func (m *alwaysCASConflictKV) Update(_ string, _ []byte, _ uint64) (uint64, error) {
+	return 0, &mockWrongSeqErr{}
+}
+
+func TestCheck_CASRetryExhausted(t *testing.T) {
+	checker := &Checker{kv: &alwaysCASConflictKV{}}
+	err := checker.Check("tenant1", 10, 1)
+	var stateErr *domain.QuotaStateError
+	if !errors.As(err, &stateErr) {
+		t.Fatalf("expected QuotaStateError after CAS exhaustion, got %T: %v", err, err)
+	}
+}

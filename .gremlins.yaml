@@ -1,6 +1,8 @@
+timeout-coefficient: 20
+
 threshold:
-  efficacy: 0
-  mutation-coverage: 0
+  efficacy: 70
+  mutation-coverage: 70
 
 mutants:
   arithmetic-base: true
