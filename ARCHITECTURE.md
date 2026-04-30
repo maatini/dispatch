@@ -1,0 +1,245 @@
+# Architektur — dispatch
+
+Dispatch ist ein mandantenfähiges E-Mail-Delivery-System. Eine REST-Schnittstelle nimmt Versandaufträge entgegen, leitet sie über NATS JetStream an einen Worker weiter, der die E-Mail über die MS Graph API zustellt.
+
+---
+
+## Services
+
+```
+┌─────────────────┐     ┌──────────────────┐     ┌───────────────────┐
+│  mail-gateway   │     │   mail-worker    │     │    mail-admin     │
+│                 │     │                  │     │                   │
+│ POST /mail/send │────▶│ NATS Consumer    │────▶│ GraphQL API       │
+│ 5-Stage Pipeline│     │ MS Graph Send    │     │ Sender-CRUD       │
+│                 │     │ Audit / DLQ      │     │ Stream-Queries    │
+└─────────────────┘     └──────────────────┘     └───────────────────┘
+         │                       │
+         │                       │
+         ▼                       ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                          NATS JetStream                             │
+│                                                                     │
+│  Streams                       KV Buckets           Object Store   │
+│  ─────────────────────         ────────────         ────────────── │
+│  CODYMAIL_MAILS (72h)          senders              attachments    │
+│  CODYMAIL_AUDIT (30d)          quota (25h TTL)      (72h TTL)     │
+│  CODYMAIL_DEAD_LETTERS (30d)   spam (60s TTL)                      │
+│  CODYMAIL_BOUNCES (30d)        delivered (7d TTL)                  │
+└─────────────────────────────────────────────────────────────────────┘
+         ▲
+         │
+┌─────────────────┐
+│  bouncemanage-  │
+│     ment        │
+│ 15-min Crawler  │
+│ NDR → Bounce-   │
+│ Record          │
+└─────────────────┘
+```
+
+| Service | Einstiegspunkt | Primäre Aufgabe |
+|---|---|---|
+| `mail-gateway` | `POST /codymail/api/v1/mail/send` | Validierung, Quota, Spam-Dedup, NATS-Publish |
+| `mail-worker` | NATS Pull-Consumer `mail-worker` | E-Mail-Versand via MS Graph, Audit, Dead-Letter |
+| `mail-admin` | GraphQL `/graphql` | Sender-Verwaltung, Stream-Abfragen, Reprocessing |
+| `bouncemanagement` | Ticker (15 min) | NDR-Crawler, Trace-ID-Extraktion, Bounce-Records |
+
+---
+
+## Mail-Versand: Datenfluss
+
+```
+HTTP POST /codymail/api/v1/mail/send
+        │
+        ▼
+┌───────────────────────────────────┐
+│          5-Stage Validation       │
+│                                   │
+│  1  JSON-Parse + Struct-Tags      │
+│     (validator, MIME-Whitelist,   │
+│      Größenlimits)                │
+│                                   │
+│  2  Sender-Lookup (appTag → KV)   │
+│     ┌─ Cache (10 min) ────┐       │
+│     └─ NATS KV senders ──┘       │
+│                                   │
+│  3  Domain-Whitelist              │
+│     (AllowedDomains pro Sender)   │
+│                                   │
+│  4  Quota-Check (rolling 24h)     │
+│     CAS-Loop (max 10 Retries)     │
+│     Fail-closed: KV-Fehler → 503  │
+│                                   │
+│  5  Spam-Dedup (SHA-256)          │
+│     appTag|subject|recip|size     │
+│     NATS KV spam (60s TTL)        │
+└───────────────────────────────────┘
+        │
+        ▼
+Attachments → NATS Object Store
+(key: {traceID}/{index}, Content gecleart)
+        │
+        ▼
+NATS Publish → CODYMAIL_MAILS
+(MailRequestDO: traceID, sender, ObjectKeys, ...)
+        │
+        ▼
+HTTP 202 Accepted
+```
+
+```
+NATS Consumer (pull, explicit ACK, 30s ack-wait)
+        │
+        ▼
+┌───────────────────────────────────┐
+│          Processor.Handle         │
+│                                   │
+│  JSON-Parse fehlt → Dead Letter   │
+│         + ACK                     │
+│                                   │
+│  Duplicate (delivered KV) → ACK   │
+│                                   │
+│  Attachments: Object Store Fetch  │
+│  Fehler → kein ACK (Redelivery)   │
+│                                   │
+│  Test-Flag → Audit TEST_SUCCESS   │
+│              + ACK + Cleanup      │
+│                                   │
+│  MS Graph SendEmail               │
+│  ┌─ Transient (429/5xx/IO) ──────┐│
+│  │  kein ACK → JetStream         ││
+│  │  redelivert                   ││
+│  └───────────────────────────────┘│
+│  ┌─ Permanent (4xx) ─────────────┐│
+│  │  Audit FAILED + ACK + Cleanup ││
+│  └───────────────────────────────┘│
+│  ┌─ Erfolg ──────────────────────┐│
+│  │  Audit DELIVERED              ││
+│  │  delivered KV schreiben       ││
+│  │  ACK + Object-Store Cleanup   ││
+│  └───────────────────────────────┘│
+└───────────────────────────────────┘
+```
+
+---
+
+## NATS-Topologie: Wer liest/schreibt was
+
+| Ressource | Gateway | Worker | Admin | Bouncemanagement |
+|---|---|---|---|---|
+| `CODYMAIL_MAILS` | **publish** | **consume** | reprocess (publish) | — |
+| `CODYMAIL_AUDIT` | — | **publish** | read | — |
+| `CODYMAIL_DEAD_LETTERS` | — | **publish** | read | — |
+| `CODYMAIL_BOUNCES` | — | — | read | **publish** |
+| KV `senders` | read (cache) | — | **read/write** | — |
+| KV `quota` | **read/write** (CAS) | — | — | — |
+| KV `spam` | **read/write** | — | — | — |
+| KV `delivered` | — | **read/write** | — | — |
+| Object Store `attachments` | **put** | **get/delete** | — | — |
+
+---
+
+## MS Graph Integration
+
+```
+SendEmail(req)
+    │
+    ▼
+Rate Limiter (per Sender, 1 req/s, Burst 10)
+    │
+    ▼
+Gesamtgröße Attachments?
+    │
+    ├─ < 3 MB ──▶ sendInline
+    │              POST /users/{sender}/sendMail
+    │              (Attachments base64-embedded)
+    │
+    └─ ≥ 3 MB ──▶ sendViaUploadSession
+                   POST /users/{sender}/messages      (Draft)
+                   POST .../attachments               (< 3 MB je Anhang)
+                   POST .../attachments/createUploadSession  (≥ 3 MB)
+                     └─ PUT chunks (1,25 MB je Chunk)
+                   POST .../messages/{id}/send
+```
+
+**Fehler-Handling im HTTP-Client:**
+
+| HTTP-Status | Fehlertyp | Verhalten |
+|---|---|---|
+| 429 | `GraphTransientError` + `RetryAfter` | Retry nach `Retry-After`-Header (max 30 s), max 3 Versuche |
+| 5xx | `GraphTransientError` | Retry mit 2 s Fallback-Delay |
+| 4xx (≠ 429) | `GraphPermanentError` | Kein Retry, zählt nicht gegen Circuit Breaker |
+| IO-Fehler | `GraphTransientError` | Retry |
+| 5 konsekutive Fehler | Circuit Breaker öffnet | 30 s Pause, dann Half-Open |
+
+---
+
+## Fehler-Semantik (Gateway → HTTP)
+
+| Fehler | HTTP | Auslöser |
+|---|---|---|
+| Validierungsfehler (Format, MIME, Größe) | 400 | Stage 1 |
+| Unbekannter `appTag` | 400 | Stage 2 |
+| Domain nicht erlaubt | 400 | Stage 3 |
+| Quota überschritten | 429 + `X-RateLimit-*` | Stage 4 |
+| KV-Fehler bei Quota | 503 | Stage 4 (fail-closed) |
+| Spam-Duplikat | 400 | Stage 5 |
+| Object-Store-Fehler | 503 | Attachment-Upload |
+| NATS-Publish-Fehler | 503 | Publish |
+
+---
+
+## Resilienz
+
+**Quota:** Fail-closed. Jeder KV-Fehler → HTTP 503, kein Bypass. Optimistic CAS mit max. 10 Retries; nach Erschöpfung → `QuotaStateError`.
+
+**Worker-Idempotenz:** `delivered` KV (7-Tage-TTL) verhindert Doppelversand bei Worker-Absturz nach Graph-Erfolg und vor ACK.
+
+**Attachments:** NATS Object Store entkoppelt Payload-Größe vom JetStream-Limit. Bucket-TTL (72 h) bereinigt Waisen-Objekte nach Worker-Crash ohne Cleanup.
+
+**Bounce-Matching:** Dreistufig — Trace-ID im NDR-Body → Anhänge → Empfänger-Lookup im Audit-Stream (implementiert im Crawler, Stufen 2/3 deferiert).
+
+---
+
+## Konfiguration
+
+Alle Werte kommen aus Umgebungsvariablen. Keine Config-Dateien.
+
+**Pflichtfelder** (ohne die kein Start):
+```
+NATS_URL
+MS_GRAPH_TENANT_ID      \
+MS_GRAPH_CLIENT_ID       } entfallen wenn MS_GRAPH_MOCK_TOKEN gesetzt
+MS_GRAPH_CLIENT_SECRET  /
+MS_GRAPH_SENDER_EMAIL
+```
+
+**Optionale Felder (Auswahl):**
+```
+PORT=8080
+CODYMAIL_SPAM_TIMEOUT_SECONDS=60
+CODYMAIL_VALIDATION_MAX_BODY_SIZE=10000000
+CODYMAIL_MAX_TOTAL_ATTACHMENT_SIZE_MB=20
+CODYMAIL_GRAPH_RATE_LIMITER_SKIP_SLEEP=false
+MS_GRAPH_PROXY_URL=           # Dev Proxy (http://localhost:8000)
+MS_GRAPH_MOCK_TOKEN=          # Überspringt OAuth2, macht Credentials optional
+```
+
+---
+
+## Entwicklungsumgebung
+
+```bash
+devbox run up-proxy        # NATS + MS Graph Dev Proxy (Port 8000)
+devbox run run-worker-dev  # Worker ohne echte MS-Graph-Credentials
+devbox run run-gateway-dev # Gateway lokal
+
+devbox run test            # Unit-Tests (kein Docker nötig)
+devbox run lint            # golangci-lint
+devbox run coverage-html   # HTML-Coverage-Report → coverage.html
+devbox run mutate          # Mutations-Tests (gremlins) auf Core-Packages
+devbox run metrics         # Coverage + Mutation in einem Lauf
+```
+
+Der MS Graph Developer Proxy (`ghcr.io/dotnet/dev-proxy:latest`) mockt alle genutzten Graph-Endpunkte. Konfiguration in `dev-proxy/devproxyrc.json`, Mock-Antworten in `dev-proxy/mocks.json`.
