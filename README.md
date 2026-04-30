@@ -1,5 +1,13 @@
 # dispatch
 
+![Build Status](https://img.shields.io/github/actions/workflow/status/maatini/dispatch/build.yml?branch=main)
+![Go Version](https://img.shields.io/github/go-mod/go-version/maatini/dispatch)
+![License](https://img.shields.io/github/license/maatini/dispatch)
+
+<div align="center">
+  <img src="assets/banner.png" alt="Dispatch Service Banner" width="100%" />
+</div>
+
 Multi-tenantes E-Mail-Delivery-System. REST-Eingang → NATS JetStream → Microsoft Graph API.
 
 ## Architektur
