@@ -35,6 +35,12 @@ type stubPublisher struct{ err error }
 
 func (s *stubPublisher) Publish(_ context.Context, _ *domain.MailRequestDO) error { return s.err }
 
+type stubAttStore struct{}
+
+func (s *stubAttStore) Upload(_ context.Context, _ string, atts []domain.AttachmentDO) ([]domain.AttachmentDO, error) {
+	return atts, nil
+}
+
 func defaultCfg() config.Config {
 	return config.Config{
 		MaxBodySize:          10_000_000,
@@ -48,7 +54,7 @@ func defaultSender() domain.Sender {
 }
 
 func buildHandler(senders senderLookup, quota quotaChecker, spam spamChecker, pub natsPublisher) *Handler {
-	return NewHandler(defaultCfg(), senders, quota, spam, pub)
+	return NewHandler(defaultCfg(), senders, quota, spam, pub, &stubAttStore{})
 }
 
 func sendRequest(t *testing.T, h *Handler, body any) *httptest.ResponseRecorder {

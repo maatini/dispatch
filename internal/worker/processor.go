@@ -29,15 +29,21 @@ type jsPublisher interface {
 	Publish(subj string, data []byte, opts ...nats.PubOpt) (*nats.PubAck, error)
 }
 
+type attachmentFetcher interface {
+	Fetch(attachments []domain.AttachmentDO) ([]domain.AttachmentDO, error)
+	Cleanup(attachments []domain.AttachmentDO)
+}
+
 // Processor handles NATS messages: deserialize → dedup → send → audit.
 type Processor struct {
 	graph     emailSender
 	delivered deliveredStore
 	js        jsPublisher
+	attStore  attachmentFetcher
 }
 
-func NewProcessor(graph emailSender, delivered nats.KeyValue, js jsPublisher) *Processor {
-	return &Processor{graph: graph, delivered: delivered, js: js}
+func NewProcessor(graph emailSender, delivered nats.KeyValue, js jsPublisher, attStore attachmentFetcher) *Processor {
+	return &Processor{graph: graph, delivered: delivered, js: js, attStore: attStore}
 }
 
 func (p *Processor) Handle(ctx context.Context, msg *nats.Msg) {
@@ -62,6 +68,18 @@ func (p *Processor) Handle(ctx context.Context, msg *nats.Msg) {
 		return
 	}
 
+	// fetch attachment bytes from Object Store before sending
+	if len(req.Attachments) > 0 {
+		fetched, err := p.attStore.Fetch(req.Attachments)
+		if err != nil {
+			log.ErrorContext(ctx, "attachment fetch failed, not acking",
+				slog.String("error", err.Error()),
+			)
+			return // no ack → JetStream redelivers
+		}
+		req.Attachments = fetched
+	}
+
 	if req.Test {
 		log.InfoContext(ctx, "test mode: skipping MS Graph call")
 		p.writeAudit(ctx, req, domain.StatusTestSuccess, "")
@@ -69,6 +87,9 @@ func (p *Processor) Handle(ctx context.Context, msg *nats.Msg) {
 			log.WarnContext(ctx, "delivered KV put failed", slog.String("error", err.Error()))
 		}
 		_ = msg.Ack()
+		if len(req.Attachments) > 0 {
+			p.attStore.Cleanup(req.Attachments)
+		}
 		return
 	}
 
@@ -79,7 +100,7 @@ func (p *Processor) Handle(ctx context.Context, msg *nats.Msg) {
 				slog.String("sender", pii.MaskEmail(req.Sender)),
 				slog.String("error", err.Error()),
 			)
-			// no ack → JetStream redelivers
+			// no ack → JetStream redelivers; keep objects in store for next attempt
 			return
 		}
 
@@ -89,6 +110,9 @@ func (p *Processor) Handle(ctx context.Context, msg *nats.Msg) {
 		)
 		p.writeAudit(ctx, req, domain.StatusFailed, err.Error())
 		_ = msg.Ack()
+		if len(req.Attachments) > 0 {
+			p.attStore.Cleanup(req.Attachments)
+		}
 		return
 	}
 
@@ -101,6 +125,9 @@ func (p *Processor) Handle(ctx context.Context, msg *nats.Msg) {
 		log.WarnContext(ctx, "delivered KV put failed", slog.String("error", err.Error()))
 	}
 	_ = msg.Ack()
+	if len(req.Attachments) > 0 {
+		p.attStore.Cleanup(req.Attachments)
+	}
 }
 
 func (p *Processor) writeAudit(ctx context.Context, req domain.MailRequestDO, status, errMsg string) {

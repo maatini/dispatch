@@ -20,7 +20,8 @@ type MailRequestDO struct {
 type AttachmentDO struct {
 	Name        string `json:"name"`
 	ContentType string `json:"contentType"`
-	Content     []byte `json:"contentBytes"`
+	ObjectKey   string `json:"objectKey,omitempty"` // NATS Object Store key, set by gateway
+	Content     []byte `json:"-"`                   // populated by worker at runtime, never serialized
 }
 
 type AuditRecord struct {

@@ -42,6 +42,11 @@ func main() {
 		slog.Error("provision KV buckets failed", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
+	objStore, err := natsutil.ProvisionObjectStore(js)
+	if err != nil {
+		slog.Error("provision object store failed", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
 
 	sendersKV, err := js.KeyValue(natsutil.BucketSenders)
 	if err != nil {
@@ -63,8 +68,9 @@ func main() {
 	quotaChecker := quota.NewChecker(quotaKV)
 	spamChecker := spam.NewChecker(spamKV)
 	publisher := gateway.NewNatsPublisher(js, cfg.NatsPublishTimeout)
+	attStore := gateway.NewAttachmentStore(objStore)
 
-	handler := gateway.NewHandler(cfg, senderStore, quotaChecker, spamChecker, publisher)
+	handler := gateway.NewHandler(cfg, senderStore, quotaChecker, spamChecker, publisher, attStore)
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,

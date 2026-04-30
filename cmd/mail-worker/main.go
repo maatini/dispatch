@@ -43,6 +43,11 @@ func main() {
 		slog.Error("provision consumer", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
+	objStore, err := natsutil.ProvisionObjectStore(js)
+	if err != nil {
+		slog.Error("provision object store failed", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
 
 	deliveredKV, err := js.KeyValue(natsutil.BucketDelivered)
 	if err != nil {
@@ -54,7 +59,8 @@ func main() {
 	rateLimiter := msgraph.NewRateLimiter(cfg.GraphRateLimiterSkip)
 	graphService := msgraph.NewService(graphClient, rateLimiter)
 
-	processor := worker.NewProcessor(graphService, deliveredKV, js)
+	attStore := worker.NewAttachmentStore(objStore)
+	processor := worker.NewProcessor(graphService, deliveredKV, js, attStore)
 	consumer := worker.NewConsumer(js, processor)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

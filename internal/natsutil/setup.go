@@ -18,10 +18,11 @@ const (
 	SubjectDeadLetter = "cody.mailing.deadletter"
 	SubjectBounce     = "cody.mailing.bounce"
 
-	BucketSenders   = "senders"
-	BucketQuota     = "quota"
-	BucketSpam      = "spam"
-	BucketDelivered = "delivered"
+	BucketSenders     = "senders"
+	BucketQuota       = "quota"
+	BucketSpam        = "spam"
+	BucketDelivered   = "delivered"
+	BucketAttachments = "attachments"
 
 	ConsumerMailWorker = "mail-worker"
 )
@@ -117,6 +118,23 @@ func upsertKV(js nats.JetStreamContext, cfg nats.KeyValueConfig) error {
 		return err
 	}
 	return err
+}
+
+// ProvisionObjectStore ensures the attachment Object Store exists.
+// TTL matches stream retention so orphaned objects are cleaned up automatically.
+func ProvisionObjectStore(js nats.JetStreamContext) (nats.ObjectStore, error) {
+	store, err := js.ObjectStore(BucketAttachments)
+	if err == nats.ErrStreamNotFound {
+		store, err = js.CreateObjectStore(&nats.ObjectStoreConfig{
+			Bucket:  BucketAttachments,
+			Storage: nats.FileStorage,
+			TTL:     72 * time.Hour,
+		})
+	}
+	if err != nil {
+		return nil, fmt.Errorf("object store %s: %w", BucketAttachments, err)
+	}
+	return store, nil
 }
 
 // ProvisionWorkerConsumer ensures the durable pull consumer for the mail worker exists.

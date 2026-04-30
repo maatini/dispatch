@@ -35,17 +35,22 @@ type natsPublisher interface {
 	Publish(ctx context.Context, msg *domain.MailRequestDO) error
 }
 
-// Handler is the HTTP handler for the mail gateway.
-type Handler struct {
-	cfg     config.Config
-	senders senderLookup
-	quota   quotaChecker
-	spam    spamChecker
-	nats    natsPublisher
+type attachmentUploader interface {
+	Upload(ctx context.Context, traceID string, attachments []domain.AttachmentDO) ([]domain.AttachmentDO, error)
 }
 
-func NewHandler(cfg config.Config, senders senderLookup, quota quotaChecker, spam spamChecker, nats natsPublisher) *Handler {
-	return &Handler{cfg: cfg, senders: senders, quota: quota, spam: spam, nats: nats}
+// Handler is the HTTP handler for the mail gateway.
+type Handler struct {
+	cfg      config.Config
+	senders  senderLookup
+	quota    quotaChecker
+	spam     spamChecker
+	nats     natsPublisher
+	attStore attachmentUploader
+}
+
+func NewHandler(cfg config.Config, senders senderLookup, quota quotaChecker, spam spamChecker, nats natsPublisher, attStore attachmentUploader) *Handler {
+	return &Handler{cfg: cfg, senders: senders, quota: quota, spam: spam, nats: nats, attStore: attStore}
 }
 
 func (h *Handler) Router() http.Handler {
@@ -109,11 +114,23 @@ func (h *Handler) handleSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Decode attachments
+	// Decode attachments and upload to Object Store
 	attachments, err := decodeAttachments(req.Attachments)
 	if err != nil {
 		h.writeValidationError(w, err, traceID)
 		return
+	}
+	if len(attachments) > 0 {
+		attachments, err = h.attStore.Upload(ctx, traceID, attachments)
+		if err != nil {
+			slog.ErrorContext(ctx, "attachment upload failed",
+				slog.String("traceId", traceID),
+				slog.String("error", err.Error()),
+			)
+			writeError(w, http.StatusServiceUnavailable, domain.ErrNatsUnavailable,
+				"Attachment storage unavailable. Bitte erneut versuchen.", traceID)
+			return
+		}
 	}
 
 	msg := &domain.MailRequestDO{
