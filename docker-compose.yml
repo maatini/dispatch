@@ -1,7 +1,7 @@
 services:
   nats:
     image: nats:2.10-alpine
-    command: ["-js", "-m", "8222", "--name", "codymail-dev"]
+    command: ["-js", "-m", "8222", "--name", "dispatch-dev"]
     ports:
       - "4222:4222"
       - "8222:8222"
@@ -10,3 +10,13 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  dev-proxy:
+    image: ghcr.io/dotnet/dev-proxy:latest
+    profiles: [proxy]
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./dev-proxy:/home/devproxy/app
+    environment:
+      - DEVPROXY_LOG_LEVEL=Information

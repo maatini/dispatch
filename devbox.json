@@ -21,7 +21,7 @@
       "echo '-------------------------------------------'",
       "echo -n 'Docker: ' && (docker info --format '{{.ServerVersion}}' 2>/dev/null || echo 'nicht erreichbar – Integrationstests werden fehlschlagen')",
       "echo '-------------------------------------------'",
-      "echo 'Skripte: build | test | test-gateway | test-worker | test-admin | test-bounce | test-integration | lint | coverage | generate | up | down'"
+      "echo 'Skripte: build | test | test-* | lint | coverage | generate | up | down | up-proxy | down-proxy | run-worker-dev | run-gateway-dev'"
     ],
     "scripts": {
       "build":           "go build ./...",
@@ -33,10 +33,14 @@
       "test-integration":"go test -tags integration -timeout 120s ./...",
       "lint":            "golangci-lint run ./...",
       "generate":        "go generate ./...",
-      "up":              "docker compose up -d && echo 'NATS gestartet. Warte auf Readiness...' && sleep 2 && docker compose ps",
-      "down":            "docker compose down",
-      "coverage":        "go test -coverprofile=coverage.out -covermode=atomic ./... && devbox run coverage-report",
-      "coverage-report": "go tool cover -func=coverage.out | awk 'BEGIN{print \"\\nCoverage-Report\"} /^total/{printf \"%-60s %s\\n\", $1, $3; next} {printf \"%-60s %s\\n\", $1, $3}' | tail -30"
+      "up":                "docker compose up -d && echo 'NATS gestartet. Warte auf Readiness...' && sleep 2 && docker compose ps",
+      "down":              "docker compose down",
+      "up-proxy":          "docker compose --profile proxy up -d && echo 'NATS + Dev Proxy gestartet (http://localhost:8000)' && sleep 3 && docker compose --profile proxy ps",
+      "down-proxy":        "docker compose --profile proxy down",
+      "run-worker-dev":    "MS_GRAPH_MOCK_TOKEN=dev-token MS_GRAPH_PROXY_URL=http://localhost:8000 NATS_URL=nats://localhost:4222 go run ./cmd/mail-worker",
+      "run-gateway-dev":   "NATS_URL=nats://localhost:4222 MS_GRAPH_MOCK_TOKEN=dev-token go run ./cmd/mail-gateway",
+      "coverage":          "go test -coverprofile=coverage.out -covermode=atomic ./... && devbox run coverage-report",
+      "coverage-report":   "go tool cover -func=coverage.out | awk 'BEGIN{print \"\\nCoverage-Report\"} /^total/{printf \"%-60s %s\\n\", $1, $3; next} {printf \"%-60s %s\\n\", $1, $3}' | tail -30"
     }
   }
 }

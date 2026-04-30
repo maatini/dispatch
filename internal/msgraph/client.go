@@ -2,10 +2,12 @@ package msgraph
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -23,9 +25,10 @@ type Client struct {
 	tenantID     string
 	clientID     string
 	clientSecret string
+	mockToken    string // non-empty → skip OAuth2, use this token directly
 }
 
-func NewClient(tenantID, clientID, clientSecret string) *Client {
+func NewClient(tenantID, clientID, clientSecret, proxyURL, mockToken string) *Client {
 	cb := gobreaker.NewCircuitBreaker(gobreaker.Settings{
 		Name:        "msgraph",
 		MaxRequests: 1,
@@ -45,17 +48,38 @@ func NewClient(tenantID, clientID, clientSecret string) *Client {
 	})
 
 	return &Client{
-		http:         &http.Client{Timeout: 30 * time.Second},
+		http:         &http.Client{Timeout: 30 * time.Second, Transport: buildTransport(proxyURL)},
 		breaker:      cb,
 		tokens:       &tokenCache{},
 		tenantID:     tenantID,
 		clientID:     clientID,
 		clientSecret: clientSecret,
+		mockToken:    mockToken,
 	}
 }
 
+// buildTransport returns a transport that routes through proxyURL with TLS verification
+// disabled — intended only for local dev proxy use.
+func buildTransport(proxyURL string) http.RoundTripper {
+	if proxyURL == "" {
+		return http.DefaultTransport
+	}
+	u, _ := url.Parse(proxyURL)
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.Proxy = http.ProxyURL(u)
+	t.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // dev proxy only
+	return t
+}
+
+func (c *Client) getToken(ctx context.Context) (string, error) {
+	if c.mockToken != "" {
+		return c.mockToken, nil
+	}
+	return c.tokens.get(ctx, c.tenantID, c.clientID, c.clientSecret)
+}
+
 func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, int, error) {
-	token, err := c.tokens.get(ctx, c.tenantID, c.clientID, c.clientSecret)
+	token, err := c.getToken(ctx)
 	if err != nil {
 		return nil, 0, err
 	}

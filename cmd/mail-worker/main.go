@@ -55,7 +55,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	graphClient := msgraph.NewClient(cfg.MSGraphTenantID, cfg.MSGraphClientID, cfg.MSGraphClientSecret)
+	graphClient := msgraph.NewClient(cfg.MSGraphTenantID, cfg.MSGraphClientID, cfg.MSGraphClientSecret, cfg.GraphProxyURL, cfg.GraphMockToken)
 	rateLimiter := msgraph.NewRateLimiter(cfg.GraphRateLimiterSkip)
 	graphService := msgraph.NewService(graphClient, rateLimiter)
 

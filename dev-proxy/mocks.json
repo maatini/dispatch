@@ -1,0 +1,74 @@
+{
+  "$schema": "https://raw.githubusercontent.com/dotnet/dev-proxy/main/schemas/v0.27.0/mocks.schema.json",
+  "mocks": [
+    {
+      "request": {
+        "url": "https://graph.microsoft.com/v1.0/users/*/sendMail",
+        "method": "POST"
+      },
+      "response": {
+        "statusCode": 202
+      }
+    },
+    {
+      "request": {
+        "url": "https://graph.microsoft.com/v1.0/users/*/messages",
+        "method": "POST"
+      },
+      "response": {
+        "statusCode": 201,
+        "body": {
+          "id": "mock-draft-AAMkAGI2"
+        }
+      }
+    },
+    {
+      "request": {
+        "url": "https://graph.microsoft.com/v1.0/users/*/messages/*/attachments",
+        "method": "POST"
+      },
+      "response": {
+        "statusCode": 201
+      }
+    },
+    {
+      "request": {
+        "url": "https://graph.microsoft.com/v1.0/users/*/messages/*/attachments/createUploadSession",
+        "method": "POST"
+      },
+      "response": {
+        "statusCode": 200,
+        "body": {
+          "uploadUrl": "https://graph.microsoft.com/v1.0/mock-upload-session"
+        }
+      }
+    },
+    {
+      "request": {
+        "url": "https://graph.microsoft.com/v1.0/mock-upload-session",
+        "method": "PUT"
+      },
+      "response": {
+        "statusCode": 200
+      }
+    },
+    {
+      "request": {
+        "url": "https://graph.microsoft.com/v1.0/users/*/messages/*/send",
+        "method": "POST"
+      },
+      "response": {
+        "statusCode": 202
+      }
+    },
+    {
+      "request": {
+        "url": "https://graph.microsoft.com/v1.0/users/*/messages/*",
+        "method": "DELETE"
+      },
+      "response": {
+        "statusCode": 204
+      }
+    }
+  ]
+}

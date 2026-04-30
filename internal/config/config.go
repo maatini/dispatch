@@ -22,6 +22,8 @@ type Config struct {
 	MaxTotalAttachmentMB int
 	NatsPublishTimeout   time.Duration
 	GraphRateLimiterSkip bool
+	GraphProxyURL        string // MS_GRAPH_PROXY_URL — routes Graph calls through Dev Proxy
+	GraphMockToken       string // MS_GRAPH_MOCK_TOKEN — skips OAuth2, makes Graph credentials optional
 }
 
 func Load() (Config, error) {
@@ -29,26 +31,33 @@ func Load() (Config, error) {
 	if natsURL == "" {
 		return Config{}, fmt.Errorf("NATS_URL is required")
 	}
+
+	graphMockToken := os.Getenv("MS_GRAPH_MOCK_TOKEN")
+	graphProxyURL := os.Getenv("MS_GRAPH_PROXY_URL")
+
 	tenantID := os.Getenv("MS_GRAPH_TENANT_ID")
-	if tenantID == "" {
-		return Config{}, fmt.Errorf("MS_GRAPH_TENANT_ID is required")
-	}
 	clientID := os.Getenv("MS_GRAPH_CLIENT_ID")
-	if clientID == "" {
-		return Config{}, fmt.Errorf("MS_GRAPH_CLIENT_ID is required")
-	}
 	clientSecret := os.Getenv("MS_GRAPH_CLIENT_SECRET")
-	if clientSecret == "" {
-		return Config{}, fmt.Errorf("MS_GRAPH_CLIENT_SECRET is required")
-	}
 	senderEmail := os.Getenv("MS_GRAPH_SENDER_EMAIL")
-	if senderEmail == "" {
-		return Config{}, fmt.Errorf("MS_GRAPH_SENDER_EMAIL is required")
+
+	if graphMockToken == "" {
+		if tenantID == "" {
+			return Config{}, fmt.Errorf("MS_GRAPH_TENANT_ID is required")
+		}
+		if clientID == "" {
+			return Config{}, fmt.Errorf("MS_GRAPH_CLIENT_ID is required")
+		}
+		if clientSecret == "" {
+			return Config{}, fmt.Errorf("MS_GRAPH_CLIENT_SECRET is required")
+		}
+		if senderEmail == "" {
+			return Config{}, fmt.Errorf("MS_GRAPH_SENDER_EMAIL is required")
+		}
 	}
 
 	bounceMailbox := os.Getenv("MS_GRAPH_BOUNCE_MAILBOX")
 	if bounceMailbox == "" {
-		bounceMailbox = senderEmail
+		bounceMailbox = envOr("MS_GRAPH_SENDER_EMAIL", "noreply@dev.local")
 	}
 
 	defaultMimeList := "application/pdf,image/jpeg,image/png,text/plain,application/msword," +
@@ -68,6 +77,8 @@ func Load() (Config, error) {
 		MaxTotalAttachmentMB: envInt("CODYMAIL_MAX_TOTAL_ATTACHMENT_SIZE_MB", 20),
 		NatsPublishTimeout:   time.Duration(envInt("CODYMAIL_NATS_PUBLISH_TIMEOUT_SECONDS", 5)) * time.Second,
 		GraphRateLimiterSkip: os.Getenv("CODYMAIL_GRAPH_RATE_LIMITER_SKIP_SLEEP") == "true",
+		GraphProxyURL:        graphProxyURL,
+		GraphMockToken:       graphMockToken,
 	}, nil
 }
 
