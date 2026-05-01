@@ -9,7 +9,10 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-const authTestSecret = "test-secret-key"
+const (
+	authTestSecret = "test-secret-key"
+	bearerPrefix   = "Bearer "
+)
 
 func signedToken(t *testing.T, secret string, expiry time.Time) string {
 	t.Helper()
@@ -31,10 +34,10 @@ func TestAuthMiddleware(t *testing.T) {
 		authHeader string
 		wantStatus int
 	}{
-		{"valid token", "Bearer " + validToken, http.StatusOK},
+		{"valid token", bearerPrefix + validToken, http.StatusOK},
 		{"no token", "", http.StatusUnauthorized},
-		{"wrong secret", "Bearer " + wrongSecretToken, http.StatusUnauthorized},
-		{"expired token", "Bearer " + expiredToken, http.StatusUnauthorized},
+		{"wrong secret", bearerPrefix + wrongSecretToken, http.StatusUnauthorized},
+		{"expired token", bearerPrefix + expiredToken, http.StatusUnauthorized},
 		{"malformed token", "Bearer notajwt", http.StatusUnauthorized},
 		{"missing bearer prefix", validToken, http.StatusUnauthorized},
 	}

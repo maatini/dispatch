@@ -2,5 +2,5 @@ projectKey=dispatch
 serverUrl=http://10.27.27.202:9000
 serverVersion=26.4.0.121862
 dashboardUrl=http://10.27.27.202:9000/dashboard?id=dispatch
-ceTaskId=68fb8656-1ed5-4f18-83e6-c1bb725748fe
-ceTaskUrl=http://10.27.27.202:9000/api/ce/task?id=68fb8656-1ed5-4f18-83e6-c1bb725748fe
+ceTaskId=dd9293ab-92fb-4d30-9020-34e36ede6c6c
+ceTaskUrl=http://10.27.27.202:9000/api/ce/task?id=dd9293ab-92fb-4d30-9020-34e36ede6c6c

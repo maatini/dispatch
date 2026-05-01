@@ -183,6 +183,9 @@ func (l *Loggy) RecordApiStart(apiName string) {
 // ExternalApiSuccess logs a successful external API call at INFO level,
 // computing latency from the prior RecordApiStart.
 func (l *Loggy) ExternalApiSuccess(apiName string, httpStatus int) {
+	if l == nil {
+		return
+	}
 	var durationMs int64
 	if v, ok := l.apiStart.LoadAndDelete(apiName); ok {
 		durationMs = time.Since(v.(time.Time)).Milliseconds()
@@ -195,6 +198,9 @@ func (l *Loggy) ExternalApiSuccess(apiName string, httpStatus int) {
 
 // ExternalApiFailure logs a failed external API call (5xx / network) at ERROR level.
 func (l *Loggy) ExternalApiFailure(apiName string, httpStatus int, err error) {
+	if l == nil {
+		return
+	}
 	var durationMs int64
 	if v, ok := l.apiStart.LoadAndDelete(apiName); ok {
 		durationMs = time.Since(v.(time.Time)).Milliseconds()
@@ -207,6 +213,9 @@ func (l *Loggy) ExternalApiFailure(apiName string, httpStatus int, err error) {
 
 // ApiClientError logs a 4xx client error against an external API at WARN level.
 func (l *Loggy) ApiClientError(apiName string, httpStatus int, reason string) {
+	if l == nil {
+		return
+	}
 	var durationMs int64
 	if v, ok := l.apiStart.LoadAndDelete(apiName); ok {
 		durationMs = time.Since(v.(time.Time)).Milliseconds()

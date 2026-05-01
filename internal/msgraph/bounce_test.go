@@ -11,6 +11,11 @@ import (
 	"github.com/sony/gobreaker"
 )
 
+const (
+	testBounceMailbox = "bounce@example.com"
+	errUnexpected     = "unexpected error: %v"
+)
+
 func testBounceService(srv *httptest.Server) *BounceService {
 	return &BounceService{
 		client: &Client{
@@ -37,9 +42,9 @@ func TestBounceService_GetUnreadMessages(t *testing.T) {
 	defer srv.Close()
 
 	svc := testBounceService(srv)
-	msgs, err := svc.GetUnreadMessages(context.Background(), "bounce@example.com")
+	msgs, err := svc.GetUnreadMessages(context.Background(), testBounceMailbox)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(errUnexpected, err)
 	}
 	if gotPath != "/users/bounce@example.com/messages" {
 		t.Errorf("path: want /users/bounce@example.com/messages, got %s", gotPath)
@@ -65,9 +70,9 @@ func TestBounceService_GetUnreadMessages_Empty(t *testing.T) {
 	defer srv.Close()
 
 	svc := testBounceService(srv)
-	msgs, err := svc.GetUnreadMessages(context.Background(), "bounce@example.com")
+	msgs, err := svc.GetUnreadMessages(context.Background(), testBounceMailbox)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(errUnexpected, err)
 	}
 	if len(msgs) != 0 {
 		t.Fatalf("expected 0 messages, got %d", len(msgs))
@@ -81,7 +86,7 @@ func TestBounceService_GetUnreadMessages_GraphError(t *testing.T) {
 	defer srv.Close()
 
 	svc := testBounceService(srv)
-	_, err := svc.GetUnreadMessages(context.Background(), "bounce@example.com")
+	_, err := svc.GetUnreadMessages(context.Background(), testBounceMailbox)
 	if err == nil {
 		t.Fatal("expected error on 403, got nil")
 	}
@@ -99,8 +104,8 @@ func TestBounceService_MarkAsRead(t *testing.T) {
 	defer srv.Close()
 
 	svc := testBounceService(srv)
-	if err := svc.MarkAsRead(context.Background(), "bounce@example.com", "msg-id-123"); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err := svc.MarkAsRead(context.Background(), testBounceMailbox, "msg-id-123"); err != nil {
+		t.Fatalf(errUnexpected, err)
 	}
 	if gotMethod != http.MethodPatch {
 		t.Errorf("method: want PATCH, got %s", gotMethod)
@@ -120,7 +125,7 @@ func TestBounceService_MarkAsRead_GraphError(t *testing.T) {
 	defer srv.Close()
 
 	svc := testBounceService(srv)
-	err := svc.MarkAsRead(context.Background(), "bounce@example.com", "gone")
+	err := svc.MarkAsRead(context.Background(), testBounceMailbox, "gone")
 	if err == nil {
 		t.Fatal("expected error on 404, got nil")
 	}
@@ -130,7 +135,7 @@ func TestParseNDRMessages_Valid(t *testing.T) {
 	data := []byte(`{"value":[{"id":"x","subject":"NDR","body":{"content":"trace body"}}]}`)
 	msgs, err := parseNDRMessages(data)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(errUnexpected, err)
 	}
 	if len(msgs) != 1 || msgs[0].ID != "x" || msgs[0].Subject != "NDR" || msgs[0].Body != "trace body" {
 		t.Errorf("unexpected result: %+v", msgs)

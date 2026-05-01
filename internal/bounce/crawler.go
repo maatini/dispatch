@@ -23,6 +23,10 @@ type graphClient interface {
 	MarkAsRead(ctx context.Context, mailbox, messageID string) error
 }
 
+type jsPublisher interface {
+	Publish(subj string, data []byte, opts ...nats.PubOpt) (*nats.PubAck, error)
+}
+
 // NDRMessage represents a non-delivery report from MS Graph.
 type NDRMessage struct {
 	ID      string
@@ -33,11 +37,11 @@ type NDRMessage struct {
 // Crawler reads NDR messages from a bounce mailbox and writes BounceRecords to NATS.
 type Crawler struct {
 	graph   graphClient
-	js      nats.JetStreamContext
+	js      jsPublisher
 	mailbox string
 }
 
-func NewCrawler(graph graphClient, js nats.JetStreamContext, mailbox string) *Crawler {
+func NewCrawler(graph graphClient, js jsPublisher, mailbox string) *Crawler {
 	return &Crawler{graph: graph, js: js, mailbox: mailbox}
 }
 

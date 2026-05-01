@@ -262,8 +262,8 @@ func TestHandle_AttachmentCleanupAfterDelivery(t *testing.T) {
 	req := domain.MailRequestDO{
 		TraceID:     "trace-clean",
 		Attachments: []domain.AttachmentDO{{Name: "f.pdf"}},
-		Sender:      "s@e.com",
-		Recipients:  []string{"r@e.com"},
+		Sender:      testSender,
+		Recipients:  []string{testRecipient},
 	}
 	proc.Handle(context.Background(), buildMsg(req))
 
@@ -285,8 +285,8 @@ func TestHandle_AttachmentCleanupAfterPermanentError(t *testing.T) {
 	req := domain.MailRequestDO{
 		TraceID:     "trace-perm",
 		Attachments: []domain.AttachmentDO{{Name: "f.pdf"}},
-		Sender:      "s@e.com",
-		Recipients:  []string{"r@e.com"},
+		Sender:      testSender,
+		Recipients:  []string{testRecipient},
 	}
 	proc.Handle(context.Background(), buildMsg(req))
 
@@ -310,8 +310,8 @@ func TestHandle_TestMode_AttachmentCleanup(t *testing.T) {
 		TraceID:     "trace-test",
 		Test:        true,
 		Attachments: []domain.AttachmentDO{{Name: "f.pdf"}},
-		Sender:      "s@e.com",
-		Recipients:  []string{"r@e.com"},
+		Sender:      testSender,
+		Recipients:  []string{testRecipient},
 	}
 	proc.Handle(context.Background(), buildMsg(req))
 
