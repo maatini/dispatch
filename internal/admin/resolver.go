@@ -64,18 +64,9 @@ func (r *Resolver) Mails(ctx context.Context, args pagedMailArgs) (*pagedMailRes
 
 	filtered := records[:0]
 	for _, rec := range records {
-		if args.Filter != nil {
-			if args.Filter.AppTag != nil && rec.AppTag != *args.Filter.AppTag {
-				continue
-			}
-			if args.Filter.Status != nil && rec.Status != *args.Filter.Status {
-				continue
-			}
-			if args.Filter.TraceID != nil && rec.TraceID != *args.Filter.TraceID {
-				continue
-			}
+		if matchesMailFilter(rec, args.Filter) {
+			filtered = append(filtered, rec)
 		}
-		filtered = append(filtered, rec)
 	}
 
 	page, size := pageSize(args.Page, args.Size)
@@ -163,6 +154,22 @@ func (r *Resolver) ReprocessDeadLetter(ctx context.Context, args struct{ Payload
 	}
 	slog.InfoContext(ctx, "dead letter reprocessed")
 	return true, nil
+}
+
+func matchesMailFilter(rec domain.AuditRecord, f *mailFilterArgs) bool {
+	if f == nil {
+		return true
+	}
+	if f.AppTag != nil && rec.AppTag != *f.AppTag {
+		return false
+	}
+	if f.Status != nil && rec.Status != *f.Status {
+		return false
+	}
+	if f.TraceID != nil && rec.TraceID != *f.TraceID {
+		return false
+	}
+	return true
 }
 
 // --- stream helpers ---

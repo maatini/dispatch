@@ -5,13 +5,19 @@ import (
 	"time"
 )
 
+const (
+	testNatsURL     = "nats://localhost:4222"
+	testSenderEmail = "sender@example.com"
+	unexpectedErr   = "unexpected error: %v"
+)
+
 func setRequiredEnv(t *testing.T) {
 	t.Helper()
-	t.Setenv("NATS_URL", "nats://localhost:4222")
+	t.Setenv("NATS_URL", testNatsURL)
 	t.Setenv("MS_GRAPH_TENANT_ID", "tenant")
 	t.Setenv("MS_GRAPH_CLIENT_ID", "client")
 	t.Setenv("MS_GRAPH_CLIENT_SECRET", "secret")
-	t.Setenv("MS_GRAPH_SENDER_EMAIL", "sender@example.com")
+	t.Setenv("MS_GRAPH_SENDER_EMAIL", testSenderEmail)
 }
 
 func TestLoad_Success(t *testing.T) {
@@ -20,10 +26,10 @@ func TestLoad_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if cfg.NatsURL != "nats://localhost:4222" {
+	if cfg.NatsURL != testNatsURL {
 		t.Errorf("NatsURL: got %s", cfg.NatsURL)
 	}
-	if cfg.MSGraphSenderEmail != "sender@example.com" {
+	if cfg.MSGraphSenderEmail != testSenderEmail {
 		t.Errorf("MSGraphSenderEmail: got %s", cfg.MSGraphSenderEmail)
 	}
 }
@@ -32,7 +38,7 @@ func TestLoad_Defaults(t *testing.T) {
 	setRequiredEnv(t)
 	cfg, err := Load()
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(unexpectedErr, err)
 	}
 	if cfg.Port != "8080" {
 		t.Errorf("Port default: want 8080, got %s", cfg.Port)
@@ -59,7 +65,7 @@ func TestLoad_MissingNatsURL(t *testing.T) {
 	t.Setenv("MS_GRAPH_TENANT_ID", "tenant")
 	t.Setenv("MS_GRAPH_CLIENT_ID", "client")
 	t.Setenv("MS_GRAPH_CLIENT_SECRET", "secret")
-	t.Setenv("MS_GRAPH_SENDER_EMAIL", "sender@example.com")
+	t.Setenv("MS_GRAPH_SENDER_EMAIL", testSenderEmail)
 
 	_, err := Load()
 	if err == nil {
@@ -68,7 +74,7 @@ func TestLoad_MissingNatsURL(t *testing.T) {
 }
 
 func TestLoad_MissingGraphCredentials(t *testing.T) {
-	t.Setenv("NATS_URL", "nats://localhost:4222")
+	t.Setenv("NATS_URL", testNatsURL)
 	// MS_GRAPH_MOCK_TOKEN is not set → credentials are required
 
 	cases := []struct {
@@ -87,7 +93,7 @@ func TestLoad_MissingGraphCredentials(t *testing.T) {
 			t.Setenv("MS_GRAPH_TENANT_ID", "tenant")
 			t.Setenv("MS_GRAPH_CLIENT_ID", "client")
 			t.Setenv("MS_GRAPH_CLIENT_SECRET", "secret")
-			t.Setenv("MS_GRAPH_SENDER_EMAIL", "sender@example.com")
+			t.Setenv("MS_GRAPH_SENDER_EMAIL", testSenderEmail)
 			t.Setenv(tc.missing, "")
 
 			_, err := Load()
@@ -99,7 +105,7 @@ func TestLoad_MissingGraphCredentials(t *testing.T) {
 }
 
 func TestLoad_MockTokenSkipsCredentialCheck(t *testing.T) {
-	t.Setenv("NATS_URL", "nats://localhost:4222")
+	t.Setenv("NATS_URL", testNatsURL)
 	t.Setenv("MS_GRAPH_MOCK_TOKEN", "dev-token")
 	// deliberately leave Graph credentials unset
 
@@ -122,7 +128,7 @@ func TestLoad_IntEnvOverrides(t *testing.T) {
 
 	cfg, err := Load()
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(unexpectedErr, err)
 	}
 	if cfg.SpamTimeoutSeconds != 30 {
 		t.Errorf("SpamTimeoutSeconds: want 30, got %d", cfg.SpamTimeoutSeconds)
@@ -147,7 +153,7 @@ func TestLoad_InvalidIntFallsToDefault(t *testing.T) {
 
 	cfg, err := Load()
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(unexpectedErr, err)
 	}
 	if cfg.SpamTimeoutSeconds != 60 {
 		t.Errorf("expected default 60 on parse error, got %d", cfg.SpamTimeoutSeconds)
@@ -159,9 +165,9 @@ func TestLoad_BounceMailboxDefaultsToSenderEmail(t *testing.T) {
 
 	cfg, err := Load()
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(unexpectedErr, err)
 	}
-	if cfg.MSGraphBounceMailbox != "sender@example.com" {
+	if cfg.MSGraphBounceMailbox != testSenderEmail {
 		t.Errorf("BounceMailbox: want sender@example.com, got %s", cfg.MSGraphBounceMailbox)
 	}
 }
@@ -172,7 +178,7 @@ func TestLoad_BounceMailboxOverride(t *testing.T) {
 
 	cfg, err := Load()
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(unexpectedErr, err)
 	}
 	if cfg.MSGraphBounceMailbox != "bounces@example.com" {
 		t.Errorf("BounceMailbox: want bounces@example.com, got %s", cfg.MSGraphBounceMailbox)
@@ -185,7 +191,7 @@ func TestLoad_ProxyURL(t *testing.T) {
 
 	cfg, err := Load()
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(unexpectedErr, err)
 	}
 	if cfg.GraphProxyURL != "http://localhost:8000" {
 		t.Errorf("GraphProxyURL: want http://localhost:8000, got %s", cfg.GraphProxyURL)
@@ -198,7 +204,7 @@ func TestLoad_MimeWhitelistOverride(t *testing.T) {
 
 	cfg, err := Load()
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(unexpectedErr, err)
 	}
 	if len(cfg.MimeWhitelist) != 2 {
 		t.Fatalf("MimeWhitelist: want 2 entries, got %d", len(cfg.MimeWhitelist))

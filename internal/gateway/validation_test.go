@@ -8,20 +8,25 @@ import (
 	"dispatch/internal/domain"
 )
 
+const (
+	validationTestEmail = "a@b.com"
+	validationTestMime  = "application/pdf"
+)
+
 func TestValidateRequest_Valid(t *testing.T) {
 	req := &domain.MailRequest{
 		AppTag:     "test",
-		Recipients: []string{"a@b.com"},
+		Recipients: []string{validationTestEmail},
 		Subject:    "Hello",
 	}
-	if err := validateRequest(req, 10_000_000, []string{"application/pdf"}, 20); err != nil {
+	if err := validateRequest(req, 10_000_000, []string{validationTestMime}, 20); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
 }
 
 func TestValidateRequest_MissingAppTag(t *testing.T) {
-	req := &domain.MailRequest{Recipients: []string{"a@b.com"}}
-	err := validateRequest(req, 10_000_000, []string{"application/pdf"}, 20)
+	req := &domain.MailRequest{Recipients: []string{validationTestEmail}}
+	err := validateRequest(req, 10_000_000, []string{validationTestMime}, 20)
 	if err == nil {
 		t.Fatal("expected error for missing appTag")
 	}
@@ -29,7 +34,7 @@ func TestValidateRequest_MissingAppTag(t *testing.T) {
 
 func TestValidateRequest_InvalidEmail(t *testing.T) {
 	req := &domain.MailRequest{AppTag: "t", Recipients: []string{"notanemail"}}
-	err := validateRequest(req, 10_000_000, []string{"application/pdf"}, 20)
+	err := validateRequest(req, 10_000_000, []string{validationTestMime}, 20)
 	if err == nil {
 		t.Fatal("expected error for invalid email")
 	}
@@ -38,10 +43,10 @@ func TestValidateRequest_InvalidEmail(t *testing.T) {
 func TestValidateRequest_SubjectTooLong(t *testing.T) {
 	req := &domain.MailRequest{
 		AppTag:     "t",
-		Recipients: []string{"a@b.com"},
+		Recipients: []string{validationTestEmail},
 		Subject:    strings.Repeat("x", 999),
 	}
-	err := validateRequest(req, 10_000_000, []string{"application/pdf"}, 20)
+	err := validateRequest(req, 10_000_000, []string{validationTestMime}, 20)
 	if err == nil {
 		t.Fatal("expected error for subject too long")
 	}
@@ -50,7 +55,7 @@ func TestValidateRequest_SubjectTooLong(t *testing.T) {
 func TestValidateRequest_BodyTooLarge(t *testing.T) {
 	req := &domain.MailRequest{
 		AppTag:      "t",
-		Recipients:  []string{"a@b.com"},
+		Recipients:  []string{validationTestEmail},
 		BodyContent: strings.Repeat("x", 100),
 	}
 	err := validateRequest(req, 50, []string{}, 20)
@@ -63,12 +68,12 @@ func TestValidateRequest_BodyTooLarge(t *testing.T) {
 func TestValidateRequest_InvalidMimeType(t *testing.T) {
 	req := &domain.MailRequest{
 		AppTag:     "t",
-		Recipients: []string{"a@b.com"},
+		Recipients: []string{validationTestEmail},
 		Attachments: []domain.Attachment{
 			{Name: "file.exe", MimeType: "application/octet-stream", Content: "AA=="},
 		},
 	}
-	err := validateRequest(req, 10_000_000, []string{"application/pdf"}, 20)
+	err := validateRequest(req, 10_000_000, []string{validationTestMime}, 20)
 	var ve *domain.ValidationError
 	if !errors.As(err, &ve) || ve.Code != domain.ErrInvalidAttachmentType {
 		t.Fatalf("expected ErrInvalidAttachmentType, got %v", err)
@@ -123,7 +128,7 @@ func TestDecodeAttachments_Empty(t *testing.T) {
 
 func TestDecodeAttachments_Valid(t *testing.T) {
 	atts := []domain.Attachment{
-		{Name: "f.pdf", MimeType: "application/pdf", Content: "aGVsbG8="}, // "hello"
+		{Name: "f.pdf", MimeType: validationTestMime, Content: "aGVsbG8="}, // "hello"
 	}
 	result, err := decodeAttachments(atts)
 	if err != nil {
@@ -136,7 +141,7 @@ func TestDecodeAttachments_Valid(t *testing.T) {
 
 func TestDecodeAttachments_InvalidBase64(t *testing.T) {
 	atts := []domain.Attachment{
-		{Name: "bad.pdf", MimeType: "application/pdf", Content: "not-valid-base64!!!"},
+		{Name: "bad.pdf", MimeType: validationTestMime, Content: "not-valid-base64!!!"},
 	}
 	_, err := decodeAttachments(atts)
 	var ve *domain.ValidationError
@@ -149,12 +154,12 @@ func TestValidateRequest_AttachmentTotalSizeExceeded(t *testing.T) {
 	// 2 MB content string → ~1.5 MB raw, exceeds 1 MB limit
 	req := &domain.MailRequest{
 		AppTag:     "t",
-		Recipients: []string{"a@b.com"},
+		Recipients: []string{validationTestEmail},
 		Attachments: []domain.Attachment{
-			{Name: "big.pdf", MimeType: "application/pdf", Content: string(make([]byte, 2*1024*1024))},
+			{Name: "big.pdf", MimeType: validationTestMime, Content: string(make([]byte, 2*1024*1024))},
 		},
 	}
-	err := validateRequest(req, 10_000_000, []string{"application/pdf"}, 1)
+	err := validateRequest(req, 10_000_000, []string{validationTestMime}, 1)
 	var ve *domain.ValidationError
 	if !errors.As(err, &ve) || ve.Code != domain.ErrAttachmentTooLarge {
 		t.Fatalf("expected ErrAttachmentTooLarge, got %v", err)

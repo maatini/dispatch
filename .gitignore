@@ -2,3 +2,5 @@
 coverage.out
 *.test
 /bin/
+.env
+kladde.md

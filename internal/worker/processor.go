@@ -81,18 +81,25 @@ func (p *Processor) Handle(ctx context.Context, msg *nats.Msg) {
 	}
 
 	if req.Test {
-		log.InfoContext(ctx, "test mode: skipping MS Graph call")
-		p.writeAudit(ctx, req, domain.StatusTestSuccess, "")
-		if _, err := p.delivered.Put(traceID, []byte{1}); err != nil {
-			log.WarnContext(ctx, "delivered KV put failed", slog.String("error", err.Error()))
-		}
-		_ = msg.Ack()
-		if len(req.Attachments) > 0 {
-			p.attStore.Cleanup(req.Attachments)
-		}
+		p.processTestMode(ctx, req, traceID, msg, log)
 		return
 	}
+	p.processSend(ctx, req, traceID, msg, log)
+}
 
+func (p *Processor) processTestMode(ctx context.Context, req domain.MailRequestDO, traceID string, msg *nats.Msg, log *slog.Logger) {
+	log.InfoContext(ctx, "test mode: skipping MS Graph call")
+	p.writeAudit(ctx, req, domain.StatusTestSuccess, "")
+	if _, err := p.delivered.Put(traceID, []byte{1}); err != nil {
+		log.WarnContext(ctx, "delivered KV put failed", slog.String("error", err.Error()))
+	}
+	_ = msg.Ack()
+	if len(req.Attachments) > 0 {
+		p.attStore.Cleanup(req.Attachments)
+	}
+}
+
+func (p *Processor) processSend(ctx context.Context, req domain.MailRequestDO, traceID string, msg *nats.Msg, log *slog.Logger) {
 	if err := p.graph.SendEmail(ctx, req); err != nil {
 		var transient *msgraph.GraphTransientError
 		if errors.As(err, &transient) {
@@ -103,7 +110,6 @@ func (p *Processor) Handle(ctx context.Context, msg *nats.Msg) {
 			// no ack → JetStream redelivers; keep objects in store for next attempt
 			return
 		}
-
 		log.ErrorContext(ctx, "permanent graph error, acking with FAILED",
 			slog.String("sender", pii.MaskEmail(req.Sender)),
 			slog.String("error", err.Error()),
@@ -115,7 +121,6 @@ func (p *Processor) Handle(ctx context.Context, msg *nats.Msg) {
 		}
 		return
 	}
-
 	log.InfoContext(ctx, "mail delivered",
 		slog.String("appTag", req.AppTag),
 		slog.String("sender", pii.MaskEmail(req.Sender)),

@@ -1,0 +1,65 @@
+{
+  "lockfile_version": "1",
+  "packages": {
+    "github:NixOS/nixpkgs/nixpkgs-unstable": {
+      "last_modified": "2026-04-29T01:19:07Z",
+      "resolved": "github:NixOS/nixpkgs/ebc08544afa77957cc348ba72dc490ec73b87f68?lastModified=1777425547&narHash=sha256-d57AbflkNfZNoFaZDzssEq1RfPoM9dLtOGI2O%2BN%2F68Q%3D"
+    },
+    "go_1_25": {
+      "resolved": "github:NixOS/nixpkgs/b86751bc4085f48661017fa226dee99fab6c651b?narHash=sha256-a8BYi3mzoJ%2FAcJP8UldOx8emoPRLeWqALZWu4ZvjPXw%3D#go_1_25",
+      "source": "nixpkg"
+    },
+    "golangci-lint": {
+      "resolved": "github:NixOS/nixpkgs/b86751bc4085f48661017fa226dee99fab6c651b?narHash=sha256-a8BYi3mzoJ%2FAcJP8UldOx8emoPRLeWqALZWu4ZvjPXw%3D#golangci-lint",
+      "source": "nixpkg"
+    },
+    "gotools": {
+      "resolved": "github:NixOS/nixpkgs/b86751bc4085f48661017fa226dee99fab6c651b?narHash=sha256-a8BYi3mzoJ%2FAcJP8UldOx8emoPRLeWqALZWu4ZvjPXw%3D#gotools",
+      "source": "nixpkg"
+    },
+    "jdk21@latest": {
+      "last_modified": "2024-06-12T20:55:33Z",
+      "resolved": "github:NixOS/nixpkgs/a9858885e197f984d92d7fe64e9fff6b2e488d40#jdk",
+      "source": "devbox-search",
+      "version": "21+35",
+      "systems": {
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/f7risq9mlz4gywxr65v46h4mv1a4a0s3-openjdk-21+35",
+              "default": true
+            },
+            {
+              "name": "debug",
+              "path": "/nix/store/lgljxsffciqlijp38iklrh1ki5vi0y4f-openjdk-21+35-debug"
+            }
+          ],
+          "store_path": "/nix/store/f7risq9mlz4gywxr65v46h4mv1a4a0s3-openjdk-21+35"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/bk3x3ia7gxqic1jgr3dz05gwi8zw671y-openjdk-21+35",
+              "default": true
+            },
+            {
+              "name": "debug",
+              "path": "/nix/store/2h6zm6qy04amw9mvir8n5fifn99dzg16-openjdk-21+35-debug"
+            }
+          ],
+          "store_path": "/nix/store/bk3x3ia7gxqic1jgr3dz05gwi8zw671y-openjdk-21+35"
+        }
+      }
+    },
+    "nats-server": {
+      "resolved": "github:NixOS/nixpkgs/b86751bc4085f48661017fa226dee99fab6c651b?narHash=sha256-a8BYi3mzoJ%2FAcJP8UldOx8emoPRLeWqALZWu4ZvjPXw%3D#nats-server",
+      "source": "nixpkg"
+    },
+    "sonar-scanner-cli": {
+      "resolved": "github:NixOS/nixpkgs/ebc08544afa77957cc348ba72dc490ec73b87f68?narHash=sha256-d57AbflkNfZNoFaZDzssEq1RfPoM9dLtOGI2O%2BN%2F68Q%3D#sonar-scanner-cli",
+      "source": "nixpkg"
+    }
+  }
+}

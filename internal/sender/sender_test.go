@@ -11,6 +11,11 @@ import (
 	"dispatch/internal/domain"
 )
 
+const (
+	freshEmail = "fresh@example.com"
+	natsDown   = "nats down"
+)
+
 type mockKV struct {
 	data    map[string][]byte
 	getErr  error
@@ -120,13 +125,13 @@ func TestGet_CacheExpiry(t *testing.T) {
 	store := newStore(kv, -1*time.Millisecond) // TTL already past on first write
 	_, _ = store.Get("app3")
 
-	kv.data["app3"] = mustMarshal(domain.Sender{AppTag: "app3", Email: "fresh@example.com"})
+	kv.data["app3"] = mustMarshal(domain.Sender{AppTag: "app3", Email: freshEmail})
 
 	got, err := store.Get("app3")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got.Email != "fresh@example.com" {
+	if got.Email != freshEmail {
 		t.Errorf("expected fresh value after expiry, got %s", got.Email)
 	}
 }
@@ -144,7 +149,7 @@ func TestGet_UnknownAppTag(t *testing.T) {
 
 func TestGet_KVError(t *testing.T) {
 	kv := newMockKV()
-	kv.getErr = errors.New("nats down")
+	kv.getErr = errors.New(natsDown)
 	_, err := newStore(kv, 10*time.Minute).Get("app1")
 	if err == nil {
 		t.Fatal("expected error on KV failure")
@@ -173,7 +178,7 @@ func TestPut_WritesAndInvalidatesCache(t *testing.T) {
 
 func TestPut_KVError(t *testing.T) {
 	kv := newMockKV()
-	kv.putErr = errors.New("nats down")
+	kv.putErr = errors.New(natsDown)
 	err := newStore(kv, 10*time.Minute).Put(domain.Sender{AppTag: "app5", Email: "x@example.com"})
 	if err == nil {
 		t.Fatal("expected error on KV put failure")
@@ -251,13 +256,13 @@ func TestInvalidateCache(t *testing.T) {
 	_, _ = store.Get("app7")
 
 	store.InvalidateCache("app7")
-	kv.data["app7"] = mustMarshal(domain.Sender{AppTag: "app7", Email: "fresh@example.com"})
+	kv.data["app7"] = mustMarshal(domain.Sender{AppTag: "app7", Email: freshEmail})
 
 	got, err := store.Get("app7")
 	if err != nil {
 		t.Fatalf("Get after InvalidateCache: %v", err)
 	}
-	if got.Email != "fresh@example.com" {
+	if got.Email != freshEmail {
 		t.Errorf("expected fresh value after invalidation, got %s", got.Email)
 	}
 }

@@ -13,6 +13,11 @@ import (
 	"dispatch/internal/msgraph"
 )
 
+const (
+	testSender    = "s@e.com"
+	testRecipient = "r@e.com"
+)
+
 // --- stubs ---
 
 type stubGraph struct{ err error }
@@ -70,7 +75,7 @@ func TestHandle_Success(t *testing.T) {
 	kv := newStubKV()
 	proc := &Processor{graph: &stubGraph{}, delivered: kv, js: js}
 
-	req := domain.MailRequestDO{TraceID: "trace-1", AppTag: "app", Sender: "s@e.com", Recipients: []string{"r@e.com"}}
+	req := domain.MailRequestDO{TraceID: "trace-1", AppTag: "app", Sender: testSender, Recipients: []string{testRecipient}}
 	proc.Handle(context.Background(), buildMsg(req))
 
 	if len(js.records) == 0 {
@@ -95,7 +100,7 @@ func TestHandle_TransientError_NoAudit(t *testing.T) {
 		delivered: newStubKV(),
 		js:        js,
 	}
-	req := domain.MailRequestDO{TraceID: "trace-2", AppTag: "app", Sender: "s@e.com", Recipients: []string{"r@e.com"}}
+	req := domain.MailRequestDO{TraceID: "trace-2", AppTag: "app", Sender: testSender, Recipients: []string{testRecipient}}
 	proc.Handle(context.Background(), buildMsg(req))
 
 	if len(js.records) != 0 {
@@ -110,7 +115,7 @@ func TestHandle_PermanentError_FAILEDAudit(t *testing.T) {
 		delivered: newStubKV(),
 		js:        js,
 	}
-	req := domain.MailRequestDO{TraceID: "trace-3", AppTag: "app", Sender: "s@e.com", Recipients: []string{"r@e.com"}}
+	req := domain.MailRequestDO{TraceID: "trace-3", AppTag: "app", Sender: testSender, Recipients: []string{testRecipient}}
 	proc.Handle(context.Background(), buildMsg(req))
 
 	if len(js.records) == 0 {
@@ -133,7 +138,7 @@ func TestHandle_TestMode_NoGraphCall(t *testing.T) {
 		js:        js,
 	}
 
-	req := domain.MailRequestDO{TraceID: "trace-4", Test: true, AppTag: "app", Sender: "s@e.com", Recipients: []string{"r@e.com"}}
+	req := domain.MailRequestDO{TraceID: "trace-4", Test: true, AppTag: "app", Sender: testSender, Recipients: []string{testRecipient}}
 	proc.Handle(context.Background(), buildMsg(req))
 
 	if graphCalled {
@@ -161,7 +166,7 @@ func TestHandle_DuplicateDelivery_NoGraphCall(t *testing.T) {
 		js:        js,
 	}
 
-	req := domain.MailRequestDO{TraceID: "trace-5", AppTag: "app", Sender: "s@e.com", Recipients: []string{"r@e.com"}}
+	req := domain.MailRequestDO{TraceID: "trace-5", AppTag: "app", Sender: testSender, Recipients: []string{testRecipient}}
 	proc.Handle(context.Background(), buildMsg(req))
 
 	if graphCalled {
@@ -213,7 +218,7 @@ func (j *failJS) Publish(_ string, _ []byte, _ ...nats.PubOpt) (*nats.PubAck, er
 
 func TestHandle_AuditPublishError_DoesNotPanic(t *testing.T) {
 	proc := &Processor{graph: &stubGraph{}, delivered: newStubKV(), js: &failJS{}}
-	req := domain.MailRequestDO{TraceID: "t-pub", AppTag: "app", Sender: "s@e.com", Recipients: []string{"r@e.com"}}
+	req := domain.MailRequestDO{TraceID: "t-pub", AppTag: "app", Sender: testSender, Recipients: []string{testRecipient}}
 	// must complete without panic; audit publish error is only logged
 	proc.Handle(context.Background(), buildMsg(req))
 }
@@ -295,7 +300,7 @@ func TestHandle_TestMode_AttachmentCleanup(t *testing.T) {
 	js := &captureJS{}
 	kv := newStubKV()
 	proc := &Processor{
-		graph:     &callCheckGraph{onCall: func() {}},
+		graph:     &callCheckGraph{onCall: func() { /* test mode skips MS Graph; this stub must not be invoked */ }},
 		delivered: kv,
 		js:        js,
 		attStore:  att,

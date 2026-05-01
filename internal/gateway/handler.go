@@ -39,6 +39,11 @@ type attachmentUploader interface {
 	Upload(ctx context.Context, traceID string, attachments []domain.AttachmentDO) ([]domain.AttachmentDO, error)
 }
 
+const (
+	headerContentType = "Content-Type"
+	contentTypeJSON   = "application/json"
+)
+
 // Handler is the HTTP handler for the mail gateway.
 type Handler struct {
 	cfg      config.Config
@@ -164,13 +169,13 @@ func (h *Handler) handleSend(w http.ResponseWriter, r *http.Request) {
 		slog.String("appTag", req.AppTag),
 	)
 
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set(headerContentType, contentTypeJSON)
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "SUCCESS", "traceId": traceID})
 }
 
 func (h *Handler) handleHealth(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set(headerContentType, contentTypeJSON)
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"status": "UP",
 		"checks": []map[string]string{
@@ -208,7 +213,7 @@ func (h *Handler) writeQuotaError(w http.ResponseWriter, err error, limit int, t
 }
 
 func writeError(w http.ResponseWriter, status int, code domain.ErrorCode, msg, traceID string) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set(headerContentType, contentTypeJSON)
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(domain.ApiError{
 		Status:  status,
