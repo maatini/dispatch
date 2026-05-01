@@ -86,7 +86,7 @@ Production-grade, deployed on Kubernetes (AKS).
 - **NATS JetStream KV** — quota, spam cache, sender config, delivered dedup
 - **NATS JetStream Object Store** — attachment storage (decoupled from message size limits)
 - **MS Graph API v1.0** — email delivery via Microsoft 365
-- **`log/slog`** — structured JSON logging
+- **`internal/loggy`** — Loggy Core 1.3.0-kompatibler JSON-Logging-Wrapper (wrappet `log/slog`); package-level `GetLogger(className)`, semantische Methoden (`BusinessRuleViolation`, `Critical`, …), API-Tracking (`RecordApiStart` / `ExternalApiSuccess` / `ExternalApiFailure` / `ApiClientError`)
 - **`github.com/go-chi/chi/v5`** — HTTP routing
 - **`github.com/go-playground/validator/v10`** — request validation
 - **`github.com/nats-io/nats.go`** — NATS client (JetStream, KV, ObjectStore)
@@ -224,16 +224,36 @@ func (s *GraphService) SendEmail(ctx context.Context, req MailRequestDO) error
 
 **Logging:**
 ```go
-// Use slog with structured fields. Never fmt.Println or log.Printf in production code.
-slog.InfoContext(ctx, "mail dispatched to NATS",
-    slog.String("traceId", req.TraceID),
-    slog.String("appTag", req.AppTag),
+// Package-level logger — einmal pro Datei, nie in Structs speichern.
+var log = loggy.GetLogger("MyComponent")
+
+// Einfaches Info-Log mit Feldern:
+log.Info("mail dispatched to NATS",
+    loggy.Kv("traceId", req.TraceID),
+    loggy.Kv("appTag", req.AppTag),
 )
-// PII: always mask before logging
-slog.WarnContext(ctx, "domain not whitelisted",
-    slog.String("recipient", pii.MaskEmail(addr)),
+
+// Semantische Kategorie explizit setzen (mit Context):
+log.Warnc(ctx, loggy.CategoryBusinessRuleViolation, "domain not whitelisted",
+    loggy.Kv("recipient", pii.MaskEmail(addr)),
 )
+
+// TraceId-angereicherten Logger ableiten (z. B. im Worker):
+log := procLog.With(loggy.Kv("traceId", traceID))
+
+// Kritische Fehler:
+log.Critical("NATS publish failed", err, loggy.Kv("appTag", req.AppTag))
+
+// MS Graph API-Tracking:
+log.RecordApiStart("MS_GRAPH")
+// ... HTTP-Call ...
+log.ExternalApiSuccess("MS_GRAPH", status)   // oder ExternalApiFailure / ApiClientError
+
+// PII: immer vor dem Loggen maskieren
+log.Warn("sender error", loggy.Kv("sender", pii.MaskEmail(addr)))
 ```
+
+Nie `slog.*` direkt aufrufen — ausschließlich über `loggy.GetLogger`. Nie `fmt.Println` oder `log.Printf` in Produktionscode.
 
 ### Build & Test
 
@@ -288,6 +308,7 @@ MS_GRAPH_TENANT_ID      \
 MS_GRAPH_CLIENT_ID       } entfallen wenn MS_GRAPH_MOCK_TOKEN gesetzt ist
 MS_GRAPH_CLIENT_SECRET  /
 MS_GRAPH_SENDER_EMAIL
+DISPATCH_ADMIN_AUTH_SECRET   # HMAC-Schlüssel für Admin-API JWT-Auth
 ```
 
 **Optional (mit Defaults):**
@@ -312,6 +333,7 @@ Fehlende Pflichtfelder → sofortiger Startabbruch mit klarer Fehlermeldung.
 - **Quota-Check niemals bypassen** — fail-closed ist intentional; jeder KV-Fehler → HTTP 503
 - **`GraphTransientError` nie in NATS schreiben** — kein ACK, kein Audit-Eintrag; JetStream redelivert
 - **NATS-Publish-Fehler nie swallowed** — immer als HTTP 503 zurückgeben, nie loggen-und-202
+- **Nie `slog.*` direkt aufrufen** — ausschließlich `loggy.GetLogger(...)` verwenden; kein `slog.Info`, kein `slog.Error` in Produktionscode
 - **Keine E-Mail-Adressen in Logs** — immer `pii.MaskEmail()` verwenden
 - **Kein PostgreSQL, kein `database/sql`, kein ORM** — einziges State-Backend ist NATS (KV + Streams + Object Store)
 - **Kein State-Backend außer NATS einführen** — kein Redis, kein SQLite, keine eingebettete DB

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -21,8 +20,6 @@ import (
 var log = loggy.GetLogger("mail-gateway")
 
 func main() {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
-
 	cfg, err := config.Load()
 	if err != nil {
 		log.Critical("config load failed", err)

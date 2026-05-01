@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -18,8 +17,6 @@ import (
 var log = loggy.GetLogger("bouncemanagement")
 
 func main() {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
-
 	cfg, err := config.Load()
 	if err != nil {
 		log.Critical("config load", err)

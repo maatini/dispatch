@@ -289,4 +289,4 @@ query {
 - **`github.com/sony/gobreaker`** — Circuit Breaker (MS Graph)
 - **`golang.org/x/time/rate`** — Token-Bucket-Rate-Limiter pro Sender
 - **`github.com/graph-gophers/graphql-go`** — GraphQL (Admin-API)
-- **`log/slog`** — Strukturiertes JSON-Logging
+- **`internal/loggy`** — Loggy Core 1.3.0-kompatibler JSON-Logging-Wrapper (`GetLogger`, semantische Kategorien, API-Tracking)

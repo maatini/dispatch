@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -18,8 +17,6 @@ import (
 var log = loggy.GetLogger("mail-worker")
 
 func main() {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
-
 	cfg, err := config.Load()
 	if err != nil {
 		log.Critical("config load failed", err)
