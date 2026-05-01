@@ -1,0 +1,25 @@
+meta {
+  name: admin-create-sender
+  type: http
+  seq: 3
+}
+
+post {
+  url: http://localhost:8002/graphql
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3Nzc3MTg0NDB9.xqOoRn22Npam1dXVjvNbSkMJWwXdpYG1R9ClB1iShms
+}
+
+body:json {
+  {
+    "query": "mutation { createSender(input: { appTag: \"sunshine-app\" email: \"martin.richardt@gmail.com\" dailyQuota: 1000 allowedDomains: \"maatini.space\" test: true }) { appTag email dailyQuota allowedDomains test } }"
+  }
+}
+
+vars:pre-request {
+  adminToken: .-MuGHHKbyHFdi2Ni9L7vD9MXTGgguyi3otz-j9_npbM
+}

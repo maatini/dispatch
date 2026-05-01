@@ -77,7 +77,7 @@ func (r *Resolver) Mails(ctx context.Context, args pagedMailArgs) (*pagedMailRes
 	for i, item := range items {
 		gqlItems[i] = toMailRecordGQL(item)
 	}
-	return &pagedMailResponse{Items: gqlItems, Total: int32(total)}, nil
+	return &pagedMailResponse{items: gqlItems, total: int32(total)}, nil
 }
 
 type pagedBounceArgs struct {
@@ -96,7 +96,7 @@ func (r *Resolver) Bounces(ctx context.Context, args pagedBounceArgs) (*pagedBou
 	for i, item := range items {
 		gqlItems[i] = toBounceRecordGQL(item)
 	}
-	return &pagedBounceResponse{Items: gqlItems, Total: int32(total)}, nil
+	return &pagedBounceResponse{items: gqlItems, total: int32(total)}, nil
 }
 
 func (r *Resolver) DeadLetters(ctx context.Context, args pagedBounceArgs) (*pagedDeadLetterResponse, error) {
@@ -110,7 +110,7 @@ func (r *Resolver) DeadLetters(ctx context.Context, args pagedBounceArgs) (*page
 	for i, item := range items {
 		gqlItems[i] = toDeadLetterGQL(item)
 	}
-	return &pagedDeadLetterResponse{Items: gqlItems, Total: int32(total)}, nil
+	return &pagedDeadLetterResponse{items: gqlItems, total: int32(total)}, nil
 }
 
 // --- Mutation ---
@@ -223,62 +223,96 @@ func readStream[T any](js nats.JetStreamContext, stream string) ([]T, error) {
 // --- GQL types ---
 
 type senderGQL struct {
-	AppTag         string
-	Email          string
-	Test           bool
-	DailyQuota     int32
-	AllowedDomains *string
+	appTag         string
+	email          string
+	test           bool
+	dailyQuota     int32
+	allowedDomains *string
 }
+
+func (s *senderGQL) AppTag() string          { return s.appTag }
+func (s *senderGQL) Email() string           { return s.email }
+func (s *senderGQL) Test() bool              { return s.test }
+func (s *senderGQL) DailyQuota() int32       { return s.dailyQuota }
+func (s *senderGQL) AllowedDomains() *string { return s.allowedDomains }
 
 type mailRecordGQL struct {
-	TraceID    string
-	AppTag     string
-	Status     string
-	Sender     string
-	Subject    *string
-	Recipients []string
-	Error      *string
-	Timestamp  string
+	traceID    string
+	appTag     string
+	status     string
+	sender     string
+	subject    *string
+	recipients []string
+	erro       *string
+	timestamp  string
 }
+
+func (m *mailRecordGQL) TraceId() string      { return m.traceID }
+func (m *mailRecordGQL) AppTag() string       { return m.appTag }
+func (m *mailRecordGQL) Status() string       { return m.status }
+func (m *mailRecordGQL) Sender() string       { return m.sender }
+func (m *mailRecordGQL) Subject() *string     { return m.subject }
+func (m *mailRecordGQL) Recipients() []string { return m.recipients }
+func (m *mailRecordGQL) Error() *string       { return m.erro }
+func (m *mailRecordGQL) Timestamp() string    { return m.timestamp }
 
 type bounceRecordGQL struct {
-	OriginalTraceID  string
-	BouncedAt        string
-	BounceReason     string
-	BouncedRecipient string
-	ProcessedAt      string
+	originalTraceID  string
+	bouncedAt        string
+	bounceReason     string
+	bouncedRecipient string
+	processedAt      string
 }
+
+func (b *bounceRecordGQL) OriginalTraceId() string  { return b.originalTraceID }
+func (b *bounceRecordGQL) BouncedAt() string        { return b.bouncedAt }
+func (b *bounceRecordGQL) BounceReason() string     { return b.bounceReason }
+func (b *bounceRecordGQL) BouncedRecipient() string { return b.bouncedRecipient }
+func (b *bounceRecordGQL) ProcessedAt() string      { return b.processedAt }
 
 type deadLetterGQL struct {
-	Payload   string
-	Error     string
-	Timestamp string
+	payload   string
+	erro      string
+	timestamp string
 }
+
+func (d *deadLetterGQL) Payload() string   { return d.payload }
+func (d *deadLetterGQL) Error() string     { return d.erro }
+func (d *deadLetterGQL) Timestamp() string { return d.timestamp }
 
 type pagedMailResponse struct {
-	Items []*mailRecordGQL
-	Total int32
+	items []*mailRecordGQL
+	total int32
 }
+
+func (p *pagedMailResponse) Items() []*mailRecordGQL { return p.items }
+func (p *pagedMailResponse) Total() int32            { return p.total }
 
 type pagedBounceResponse struct {
-	Items []*bounceRecordGQL
-	Total int32
+	items []*bounceRecordGQL
+	total int32
 }
 
+func (p *pagedBounceResponse) Items() []*bounceRecordGQL { return p.items }
+func (p *pagedBounceResponse) Total() int32              { return p.total }
+
 type pagedDeadLetterResponse struct {
-	Items []*deadLetterGQL
-	Total int32
+	items []*deadLetterGQL
+	total int32
 }
+
+func (p *pagedDeadLetterResponse) Items() []*deadLetterGQL { return p.items }
+func (p *pagedDeadLetterResponse) Total() int32            { return p.total }
 
 func toSenderGQL(s domain.Sender) *senderGQL {
 	g := &senderGQL{
-		AppTag:     s.AppTag,
-		Email:      s.Email,
-		Test:       s.Test,
-		DailyQuota: int32(s.DailyQuota),
+		appTag:     s.AppTag,
+		email:      s.Email,
+		test:       s.Test,
+		dailyQuota: int32(s.DailyQuota),
 	}
 	if s.AllowedDomains != "" {
-		g.AllowedDomains = &s.AllowedDomains
+		g.allowedDomains = &s.AllowedDomains
 	}
 	return g
 }
@@ -298,37 +332,37 @@ func fromSenderInput(input senderInputArgs) domain.Sender {
 
 func toMailRecordGQL(r domain.AuditRecord) *mailRecordGQL {
 	g := &mailRecordGQL{
-		TraceID:    r.TraceID,
-		AppTag:     r.AppTag,
-		Status:     r.Status,
-		Sender:     r.Sender,
-		Recipients: r.Recipients,
-		Timestamp:  r.Timestamp.String(),
+		traceID:    r.TraceID,
+		appTag:     r.AppTag,
+		status:     r.Status,
+		sender:     r.Sender,
+		recipients: r.Recipients,
+		timestamp:  r.Timestamp.String(),
 	}
 	if r.Subject != "" {
-		g.Subject = &r.Subject
+		g.subject = &r.Subject
 	}
 	if r.Error != "" {
-		g.Error = &r.Error
+		g.erro = &r.Error
 	}
 	return g
 }
 
 func toBounceRecordGQL(r domain.BounceRecord) *bounceRecordGQL {
 	return &bounceRecordGQL{
-		OriginalTraceID:  r.OriginalTraceID,
-		BouncedAt:        r.BouncedAt.String(),
-		BounceReason:     r.BounceReason,
-		BouncedRecipient: r.BouncedRecipient,
-		ProcessedAt:      r.ProcessedAt.String(),
+		originalTraceID:  r.OriginalTraceID,
+		bouncedAt:        r.BouncedAt.String(),
+		bounceReason:     r.BounceReason,
+		bouncedRecipient: r.BouncedRecipient,
+		processedAt:      r.ProcessedAt.String(),
 	}
 }
 
 func toDeadLetterGQL(dl domain.DeadLetter) *deadLetterGQL {
 	return &deadLetterGQL{
-		Payload:   dl.Payload,
-		Error:     dl.Error,
-		Timestamp: dl.Timestamp.String(),
+		payload:   dl.Payload,
+		erro:      dl.Error,
+		timestamp: dl.Timestamp.String(),
 	}
 }
 

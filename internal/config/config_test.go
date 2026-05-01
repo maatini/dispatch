@@ -62,13 +62,16 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 }
 
-func TestLoad_MissingAdminAuthSecret(t *testing.T) {
+func TestLoad_AdminAuthSecretOptional(t *testing.T) {
 	setRequiredEnv(t)
 	t.Setenv("DISPATCH_ADMIN_AUTH_SECRET", "")
 
-	_, err := Load()
-	if err == nil {
-		t.Fatal("expected error for missing DISPATCH_ADMIN_AUTH_SECRET")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.AdminAuthSecret != "" {
+		t.Errorf("AdminAuthSecret: want empty, got %q", cfg.AdminAuthSecret)
 	}
 }
 

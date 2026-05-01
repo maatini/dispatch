@@ -57,9 +57,6 @@ func Load() (Config, error) {
 	}
 
 	adminAuthSecret := os.Getenv("DISPATCH_ADMIN_AUTH_SECRET")
-	if adminAuthSecret == "" {
-		return Config{}, fmt.Errorf("DISPATCH_ADMIN_AUTH_SECRET is required")
-	}
 
 	bounceMailbox := os.Getenv("MS_GRAPH_BOUNCE_MAILBOX")
 	if bounceMailbox == "" {

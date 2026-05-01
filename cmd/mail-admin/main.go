@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -21,6 +22,10 @@ func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		log.Critical("config load", err)
+		os.Exit(1)
+	}
+	if cfg.AdminAuthSecret == "" {
+		log.Critical("config load", fmt.Errorf("DISPATCH_ADMIN_AUTH_SECRET is required"))
 		os.Exit(1)
 	}
 

@@ -1,0 +1,11 @@
+meta {
+  name: gateway-health
+  type: http
+  seq: 2
+}
+
+get {
+  url:  http://localhost:8001/health
+  body: none
+  auth: none
+}
