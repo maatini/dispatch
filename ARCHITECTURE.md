@@ -162,25 +162,28 @@ Gesamtgröße Attachments?
                    POST .../messages/{id}/send
 ```
 
-### NDR-Crawling (`msgraph.BounceService`)
+### NDR-Crawling (`msgraph.BounceService` + `bounce.Crawler`)
 
 ```
-BounceService.GetUnreadMessages(mailbox)
+bounce.Crawler.Run(ctx)                     ← internal/bounce
     │
-    ▼
-GET /users/{mailbox}/messages?$filter=isRead+eq+false&$select=id,subject,body
+    ├─ graphClient.GetUnreadMessages(mailbox)
+    │       │
+    │       ▼  msgraph.BounceService        ← internal/msgraph
+    │       GET /users/{mailbox}/messages?$filter=isRead+eq+false
+    │           &$select=id,subject,body
+    │       Parse → []NDRMessage{ID, Subject, Body}
     │
-    ▼
-Parse → []NDRMessage{ID, Subject, Body}
+    ├─ für jede Nachricht:
+    │     extractTraceID(body)
+    │         → regex auf X-Dispatch-TraceId: <uuid>
+    │     json.Marshal(domain.BounceRecord)
+    │     jsPublisher.Publish → DISPATCH_BOUNCES
     │
-    ▼
-Crawler.process → Trace-ID extrahieren → DISPATCH_BOUNCES
-    │
-    ▼
-BounceService.MarkAsRead(mailbox, messageID)
-    │
-    ▼
-PATCH /users/{mailbox}/messages/{id}   {"isRead": true}
+    └─ graphClient.MarkAsRead(mailbox, messageID)
+            │
+            ▼  msgraph.BounceService
+            PATCH /users/{mailbox}/messages/{id}   {"isRead": true}
 ```
 
 **Fehler-Handling im HTTP-Client:**
@@ -222,6 +225,96 @@ PATCH /users/{mailbox}/messages/{id}   {"isRead": true}
 **Bounce-Matching:** `BounceService` (MS Graph) ruft alle 15 Minuten ungelesene Nachrichten aus der Bounce-Mailbox ab, extrahiert die Trace-ID via `X-Dispatch-TraceId`-Header im NDR-Body und schreibt einen `BounceRecord` nach `DISPATCH_BOUNCES`. Verarbeitete Nachrichten werden via `PATCH .../messages/{id}` als gelesen markiert.
 
 **Attachment-Streaming:** Base64-Inhalt von Anhängen wird im Gateway nie vollständig als `[]byte` dekodiert. Validierung (Größe, Formatprüfung) und Upload in den NATS Object Store erfolgen durch Streaming via `base64.NewDecoder` — O(1) Speicher unabhängig von der Anhangsgröße.
+
+---
+
+## Logging (`internal/loggy`)
+
+Alle Services loggen ausschließlich über das interne `loggy`-Package — kein direkter Aufruf von `slog.*`, `log.*` oder `fmt.Print*` in Produktionscode.
+
+### Design
+
+```
+GetLogger("ComponentName") → *Loggy
+    │
+    └─ Hält einen eigenen *slog.Logger (JSON → stdout)
+       Keine Abhängigkeit von slog.Default()
+       → main.go braucht kein slog.SetDefault()
+```
+
+`Loggy` ist nicht im Struct gespeichert, sondern als package-level Variable deklariert:
+
+```go
+var log = loggy.GetLogger("ComponentName")
+```
+
+### Semantische Kategorien
+
+Jeder Log-Eintrag trägt ein `"type"`-Feld (`LogCategory`), das den semantischen Kontext codiert:
+
+| Kategorie | Konstante | Typischer Auslöser |
+|---|---|---|
+| `INFO` | `CategoryInfo` | Normaler Betrieb |
+| `BUSINESS_LOGIC` | `CategoryBusinessLogic` | Domain-Entscheidungen |
+| `BUSINESS_RULE_VIOLATION` | `CategoryBusinessRuleViolation` | Domain-Whitelist, Quota, Spam |
+| `VALIDATION` | `CategoryValidation` | Eingabefehler |
+| `MISSING_DATA` | `CategoryMissingData` | Erwartetes Feld fehlt |
+| `CRITICAL` | `CategoryCritical` | Systemgefährdende Fehler |
+| `UNCAUGHT_EXCEPTION` | `CategoryUncaughtException` | Panic/recover an Systemgrenzen |
+| `SECURITY` | `CategorySecurity` | Abgelaufene Credentials |
+| `API_REQUEST` | `CategoryAPIRequest` | Erfolgreicher MS-Graph-Call |
+| `API_EXTERNAL_FAILURE` | `CategoryAPIExternalFailure` | 5xx / Netzwerkfehler |
+| `API_CLIENT_ERROR` | `CategoryAPIClientError` | 4xx gegen externe API |
+| `PERFORMANCE` | `CategoryPerformance` | Laufzeitmessungen |
+| `UNSTRUCTURED` | `CategoryUnstructured` | Freitext-Logs (Notlösung) |
+
+### API-Tracking
+
+MS-Graph-Calls werden mit Latenzmessung geloggt:
+
+```go
+log.RecordApiStart("MS_GRAPH")          // speichert time.Now() in sync.Map
+// ... HTTP-Call ...
+log.ExternalApiSuccess("MS_GRAPH", 200) // berechnet Latenz, löscht Eintrag
+log.ExternalApiFailure("MS_GRAPH", 503, err)
+log.ApiClientError("MS_GRAPH", 429, "throttled")
+```
+
+### Kontext-angereicherte Logger
+
+```go
+// Einmal ableiten, überall nutzen — mutiert den Basis-Logger nicht:
+reqLog := procLog.With(loggy.Kv("traceId", traceID))
+reqLog.Info("processing mail")
+reqLog.Warn("retry", loggy.Kv("attempt", n))
+```
+
+---
+
+## Bounce Crawler (`internal/bounce`)
+
+Der Bounce Crawler entkoppelt die NDR-Verarbeitung von der MS-Graph-Schicht über zwei Interfaces:
+
+```
+graphClient  (GetUnreadMessages / MarkAsRead)
+    ↑ implementiert von: msgraph.BounceService
+    │
+Crawler.Run(ctx)
+    │
+    ├─ GetUnreadMessages → []NDRMessage
+    ├─ für jede Nachricht:
+    │     extractTraceID(body) → X-Dispatch-TraceId-Header im NDR-Body
+    │     json.Marshal(BounceRecord) → jsPublisher.Publish
+    │     MarkAsRead
+    └─ Fehler beim Publish: geloggt, Schleife wird fortgesetzt
+         (kein Abbruch — eine fehlerhafte Nachricht blockiert nicht die übrigen)
+
+jsPublisher  (Publish)
+    ↑ implementiert von: nats.JetStreamContext
+```
+
+Das `jsPublisher`-Interface ist absichtlich schmal (nur `Publish`) — es macht den Crawler
+ohne NATS testbar und dokumentiert die tatsächliche Abhängigkeit.
 
 ---
 

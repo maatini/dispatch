@@ -2,7 +2,7 @@
 
 ![Build Status](https://img.shields.io/github/actions/workflow/status/maatini/dispatch/build.yml?branch=main)
 ![Go Version](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go)
-![Tests](https://img.shields.io/badge/tests-112-brightgreen)
+![Tests](https://img.shields.io/badge/tests-151-brightgreen)
 ![Quality Gate](https://img.shields.io/badge/quality_gate-PASSED-brightgreen?logo=sonarqube)
 
 <div align="center">
@@ -163,7 +163,7 @@ devbox run sonar             # Coverage erzeugen + SonarQube-Scan
 
 | Metrik | Wert |
 |--------|------|
-| Unit-Tests | 112 |
+| Unit-Tests | 151 |
 | Mutation Score (alle Core-Packages) | 100 % Efficacy |
 | Mutation Score Threshold | ≥ 70 % (efficacy + mutation-coverage) |
 | SonarQube Quality Gate | PASSED |
@@ -173,11 +173,13 @@ devbox run sonar             # Coverage erzeugen + SonarQube-Scan
 | Package | Coverage | Anmerkung |
 |---------|---------|-----------|
 | `internal/admin` | 13 % | Resolver erfordert NATS; `auth.go` 93 % |
+| `internal/bounce` | 92 % | |
 | `internal/config` | 98 % | |
 | `internal/domain` | 100 % | |
 | `internal/gateway` | 75 % | `AttachmentStore.Upload` nur via Integration |
 | `internal/hash` | 100 % | |
-| `internal/msgraph` | 46 % | `Service.SendEmail` nur via Integration |
+| `internal/loggy` | 100 % | |
+| `internal/msgraph` | 47 % | `Service.SendEmail` nur via Integration |
 | `internal/pii` | 100 % | |
 | `internal/quota` | 89 % | |
 | `internal/sender` | 92 % | |
