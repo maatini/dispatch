@@ -11,7 +11,7 @@ Dispatch ist ein mandantenfähiges E-Mail-Delivery-System. Eine REST-Schnittstel
 │  mail-gateway   │     │   mail-worker    │     │    mail-admin     │
 │                 │     │                  │     │                   │
 │ POST /mail/send │────▶│ NATS Consumer    │────▶│ GraphQL API       │
-│ 5-Stage Pipeline│     │ MS Graph Send    │     │ Sender-CRUD       │
+│ 7-Stage Pipeline│     │ MS Graph Send    │     │ Sender-CRUD       │
 │                 │     │ Audit / DLQ      │     │ Stream-Queries    │
 └─────────────────┘     └──────────────────┘     └───────────────────┘
          │                       │
@@ -54,9 +54,9 @@ HTTP POST /dispatch/api/v1/mail/send
         │
         ▼
 ┌───────────────────────────────────┐
-│          5-Stage Validation       │
+│       7-Stage Gateway Pipeline    │
 │                                   │
-│  1  JSON-Parse + Struct-Tags      │
+│  1  JSON-Decode + Struct-Validier.│
 │     (validator, MIME-Whitelist,   │
 │      Größenlimits)                │
 │                                   │
@@ -74,18 +74,15 @@ HTTP POST /dispatch/api/v1/mail/send
 │  5  Spam-Dedup (SHA-256)          │
 │     appTag|subject|recip|size     │
 │     NATS KV spam (60s TTL)        │
+│                                   │
+│  6  Anhang-Upload                 │
+│     decode base64 → Object Store  │
+│     Fehler → HTTP 503             │
+│                                   │
+│  7  NATS Publish → DISPATCH_MAILS │
+│     Fehler → HTTP 503             │
+│     Erfolg → HTTP 202             │
 └───────────────────────────────────┘
-        │
-        ▼
-Attachments → NATS Object Store
-(key: {traceID}/{index}, Content gecleart)
-        │
-        ▼
-NATS Publish → DISPATCH_MAILS
-(MailRequestDO: traceID, sender, ObjectKeys, ...)
-        │
-        ▼
-HTTP 202 Accepted
 ```
 
 ```
@@ -240,6 +237,7 @@ devbox run lint            # golangci-lint
 devbox run coverage-html   # HTML-Coverage-Report → coverage.html
 devbox run mutate          # Mutations-Tests (gremlins) auf Core-Packages
 devbox run metrics         # Coverage + Mutation in einem Lauf
+devbox run sonar           # Coverage erzeugen + SonarQube-Scan
 ```
 
 Der MS Graph Developer Proxy (`ghcr.io/dotnet/dev-proxy:latest`) mockt alle genutzten Graph-Endpunkte. Konfiguration in `dev-proxy/devproxyrc.json`, Mock-Antworten in `dev-proxy/mocks.json`.

@@ -15,14 +15,15 @@ Multi-tenantes E-Mail-Delivery-System. REST-Eingang → NATS JetStream → Micro
 ```
 Client
   POST /dispatch/api/v1/mail/send
-  └── mail-gateway
-        1. Validierung (Format, Größe, MIME)
+  └── mail-gateway (7-Stage-Pipeline)
+        1. JSON-Decode + Struct-Validierung (Format, Größe, MIME-Whitelist)
         2. Sender-Lookup (NATS KV senders, In-Memory-Cache 10 min)
         3. Domain-Whitelist-Check
         4. Quota-Check (NATS KV quota, rolling 24h, CAS, fail-closed)
-        5. Spam-Deduplizierung (NATS KV spam, TTL-Bucket)
-        6. Anhänge → NATS Object Store attachments (key: {traceID}/{index})
-        7. Publish → NATS JetStream DISPATCH_MAILS (Anhangsinhalte entfernt)
+        5. Spam-Deduplizierung (SHA-256, NATS KV spam, TTL-Bucket)
+        6. Anhang-Upload → NATS Object Store attachments
+           ↳ Fehler → HTTP 503 (kein Retry)
+        7. Publish → NATS JetStream DISPATCH_MAILS
            ↳ Fehler → HTTP 503 (kein Retry, kein Fallback)
            ↳ Erfolg → HTTP 202
 
@@ -153,19 +154,37 @@ devbox run coverage-html     # Tests + Coverage-Bericht (HTML → coverage.html)
 devbox run test-integration  # Integrationstests (Docker erforderlich)
 devbox run mutate            # Mutations-Tests (gremlins) für Core-Packages
 devbox run metrics           # Coverage + Mutations in einem Lauf
+devbox run sonar             # Coverage erzeugen + SonarQube-Scan
 ```
 
 ### Test-Metriken (Stand main)
 
 | Metrik | Wert |
 |--------|------|
-| Unit-Tests | 46 |
-| Statement Coverage (Core-Packages) | 67 % |
-| Mutation Score (gateway) | 100 % (1/1 killed) |
-| Mutation Score (quota) | 100 % (3/3 killed) |
+| Unit-Tests | 97 |
+| Statement Coverage (getestete Packages) | 84 – 100 % |
+| Mutation Score (alle Core-Packages) | 100 % Efficacy |
 | Mutation Score Threshold | ≥ 70 % (efficacy + mutation-coverage) |
+| SonarQube Quality Gate | PASSED |
 
-Mutation-Tests laufen mit [gremlins](https://github.com/go-gremlins/gremlins) (`go tool gremlins unleash`) auf den Packages `internal/gateway`, `internal/quota`, `internal/spam`, `internal/worker`, `internal/pii` und `internal/hash`. Die Schwellwerte sind in [`.gremlins.yaml`](.gremlins.yaml) hinterlegt.
+**Coverage pro Package:**
+
+| Package | Coverage |
+|---------|---------|
+| `internal/config` | 96 % |
+| `internal/domain` | 100 % |
+| `internal/gateway` | 95 % |
+| `internal/hash` | 100 % |
+| `internal/msgraph` | 88 % |
+| `internal/pii` | 100 % |
+| `internal/quota` | 92 % |
+| `internal/sender` | 95 % |
+| `internal/spam` | 88 % |
+| `internal/worker` | 84 % |
+
+Mutation-Tests laufen mit [gremlins](https://github.com/go-gremlins/gremlins) (`go tool gremlins unleash`) auf den Packages `internal/gateway`, `internal/quota`, `internal/spam`, `internal/worker`, `internal/pii`, `internal/hash` und `internal/msgraph`. Die Schwellwerte sind in [`.gremlins.yaml`](.gremlins.yaml) hinterlegt.
+
+Statische Code-Analyse via [SonarQube](http://10.27.27.202:9000/dashboard?id=dispatch). Token wird aus `.env` geladen (`SONAR_TOKEN=sqp_...`), nie im Repository gespeichert.
 
 ## API
 
@@ -252,7 +271,7 @@ query {
 
 ## Stack
 
-- **Go 1.24+**
+- **Go 1.25+**
 - **NATS JetStream** — Message-Broker, KV-Store, Object Store, State-Backend
 - **Microsoft Graph API v1.0** — E-Mail-Versand via Microsoft 365
 - **`github.com/go-chi/chi/v5`** — HTTP-Routing
