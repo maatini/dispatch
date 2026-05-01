@@ -15,6 +15,7 @@ import (
 	"dispatch/internal/quota"
 	"dispatch/internal/sender"
 	"dispatch/internal/spam"
+	"dispatch/internal/version"
 )
 
 var log = loggy.GetLogger("mail-gateway")
@@ -83,7 +84,7 @@ func main() {
 	defer stop()
 
 	go func() {
-		log.Info("mail-gateway started", loggy.Kv("port", cfg.Port))
+		log.Info("mail-gateway started", loggy.Kv("version", version.Version), loggy.Kv("port", cfg.Port))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Critical("server error", err)
 			os.Exit(1)

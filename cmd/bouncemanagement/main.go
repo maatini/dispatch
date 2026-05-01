@@ -12,6 +12,7 @@ import (
 	"dispatch/internal/loggy"
 	"dispatch/internal/msgraph"
 	"dispatch/internal/natsutil"
+	"dispatch/internal/version"
 )
 
 var log = loggy.GetLogger("bouncemanagement")
@@ -49,7 +50,7 @@ func main() {
 	ticker := time.NewTicker(15 * time.Minute)
 	defer ticker.Stop()
 
-	log.Info("bouncemanagement started", loggy.Kv("mailbox", cfg.MSGraphBounceMailbox))
+	log.Info("bouncemanagement started", loggy.Kv("version", version.Version), loggy.Kv("mailbox", cfg.MSGraphBounceMailbox))
 
 	// run immediately on start
 	if err := crawler.Run(ctx); err != nil {

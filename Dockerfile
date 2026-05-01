@@ -6,10 +6,12 @@
 #   docker build --build-arg SERVICE=bouncemanagement -t dispatch/bouncemanagement .
 
 ARG SERVICE=mail-gateway
+ARG VERSION=0.5.0
 
 # ── Builder ───────────────────────────────────────────────────────────────────
 FROM golang:1.25-alpine AS builder
 ARG SERVICE
+ARG VERSION
 
 WORKDIR /src
 
@@ -18,7 +20,7 @@ RUN go mod download
 
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-    go build -trimpath -ldflags="-s -w" \
+    go build -trimpath -ldflags="-s -w -X dispatch/internal/version.Version=${VERSION}" \
     -o /bin/service ./cmd/${SERVICE}
 
 # ── Runtime ───────────────────────────────────────────────────────────────────

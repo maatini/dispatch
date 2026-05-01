@@ -14,6 +14,7 @@ import (
 	"dispatch/internal/loggy"
 	"dispatch/internal/natsutil"
 	"dispatch/internal/sender"
+	"dispatch/internal/version"
 )
 
 var log = loggy.GetLogger("mail-admin")
@@ -79,7 +80,7 @@ func main() {
 	defer stop()
 
 	go func() {
-		log.Info("mail-admin started", loggy.Kv("port", cfg.Port))
+		log.Info("mail-admin started", loggy.Kv("version", version.Version), loggy.Kv("port", cfg.Port))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Critical("server error", err)
 			os.Exit(1)

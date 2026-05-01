@@ -30,6 +30,16 @@
 **Ergebnis:** Keine Tests betroffen (Dokumentation).
 **Hinweis:** **WICHTIG** – Ab sofort nach jeder Änderung Log-Eintrag pflichtig.
 
+## 2026-05-01 — Versionierung: internal/version + ldflags
+
+**Begründung:** Einheitliche Versionsnummer 0.5.0 in allen Services, beim Start geloggt und via `-X dispatch/internal/version.Version` zur Build-Zeit injizierbar.
+**Änderungen:**
+- `internal/version/version.go` (neues Paket, `var Version = "0.5.0"`)
+- `cmd/*/main.go` (alle 4 Services: `loggy.Kv("version", version.Version)` im Startup-Log)
+- `Dockerfile` (`ARG VERSION=0.5.0`, ldflags `-X dispatch/internal/version.Version=${VERSION}`)
+- `.github/workflows/build.yml` (`build-args: VERSION=0.5.0`)
+**Ergebnis:** `go build ./cmd/...` + `go test ./...` → 151 Tests, alles grün.
+
 ## 2026-05-01 — GitHub Workflows: Docker-Build, Trivy-Scan, SBOM
 
 **Begründung:** CI deckt jetzt den vollständigen Image-Lifecycle ab: Build → Vulnerability-Scan → SBOM → Push. Trivy SARIF-Upload ins GitHub Security-Tab ermöglicht Triage ohne externen Scan-Server.

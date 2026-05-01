@@ -11,6 +11,7 @@ import (
 	"dispatch/internal/loggy"
 	"dispatch/internal/msgraph"
 	"dispatch/internal/natsutil"
+	"dispatch/internal/version"
 	"dispatch/internal/worker"
 )
 
@@ -66,7 +67,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	log.Info("mail-worker started")
+	log.Info("mail-worker started", loggy.Kv("version", version.Version))
 	if err := consumer.Run(ctx); err != nil {
 		log.Critical("consumer error", err)
 		os.Exit(1)
