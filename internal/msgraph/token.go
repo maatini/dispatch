@@ -13,9 +13,10 @@ import (
 )
 
 type tokenCache struct {
-	mu          sync.Mutex
-	accessToken string
-	expiresAt   time.Time
+	mu                sync.Mutex
+	accessToken       string
+	expiresAt         time.Time
+	tokenEndpointBase string // empty = real Microsoft endpoint
 }
 
 type tokenResponse struct {
@@ -31,7 +32,12 @@ func (tc *tokenCache) get(ctx context.Context, tenantID, clientID, clientSecret 
 		return tc.accessToken, nil
 	}
 
-	token, expiresIn, err := fetchToken(ctx, tenantID, clientID, clientSecret)
+	base := tc.tokenEndpointBase
+	if base == "" {
+		base = "https://login.microsoftonline.com"
+	}
+	tokenURL := fmt.Sprintf("%s/%s/oauth2/v2.0/token", base, tenantID)
+	token, expiresIn, err := fetchToken(ctx, tokenURL, clientID, clientSecret)
 	if err != nil {
 		return "", err
 	}
@@ -41,9 +47,7 @@ func (tc *tokenCache) get(ctx context.Context, tenantID, clientID, clientSecret 
 	return tc.accessToken, nil
 }
 
-func fetchToken(ctx context.Context, tenantID, clientID, clientSecret string) (string, int, error) {
-	tokenURL := fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/token", tenantID)
-
+func fetchToken(ctx context.Context, tokenURL, clientID, clientSecret string) (string, int, error) {
 	form := url.Values{}
 	form.Set("grant_type", "client_credentials")
 	form.Set("client_id", clientID)
