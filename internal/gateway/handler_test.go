@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"dispatch/internal/config"
@@ -42,13 +43,17 @@ func (s *stubPublisher) Publish(_ context.Context, _ *domain.MailRequestDO) erro
 
 type stubAttStore struct{}
 
-func (s *stubAttStore) Upload(_ context.Context, _ string, atts []domain.AttachmentDO) ([]domain.AttachmentDO, error) {
-	return atts, nil
+func (s *stubAttStore) Upload(_ context.Context, _ string, atts []domain.Attachment) ([]domain.AttachmentDO, error) {
+	result := make([]domain.AttachmentDO, len(atts))
+	for i, a := range atts {
+		result[i] = domain.AttachmentDO{Name: a.Name, ContentType: a.MimeType}
+	}
+	return result, nil
 }
 
 type failAttStore struct{}
 
-func (s *failAttStore) Upload(_ context.Context, _ string, _ []domain.AttachmentDO) ([]domain.AttachmentDO, error) {
+func (s *failAttStore) Upload(_ context.Context, _ string, _ []domain.Attachment) ([]domain.AttachmentDO, error) {
 	return nil, errors.New("object store unavailable")
 }
 
@@ -194,6 +199,20 @@ func TestHandleSend_AttachmentUploadError(t *testing.T) {
 	rr := sendRequest(t, h, body)
 	if rr.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestHandleSend_BodyTooLarge(t *testing.T) {
+	// MaxBodySize=10: any body > 10 bytes triggers MaxBytesError.
+	// Body must start with valid JSON chars so the scanner doesn't fail first.
+	cfg := config.Config{MaxBodySize: 10, MimeWhitelist: []string{}, MaxTotalAttachmentMB: 20}
+	h := NewHandler(cfg, &stubSenders{sender: defaultSender()}, &stubQuota{}, &stubSpam{}, &stubPublisher{}, &stubAttStore{})
+	body := `{"appTag":"test","bodyContent":"` + strings.Repeat("x", 100) + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/dispatch/api/v1/mail/send", strings.NewReader(body))
+	rr := httptest.NewRecorder()
+	h.Router().ServeHTTP(rr, req)
+	if rr.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected 413, got %d: %s", rr.Code, rr.Body.String())
 	}
 }
 

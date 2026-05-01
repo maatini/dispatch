@@ -36,7 +36,7 @@ type natsPublisher interface {
 }
 
 type attachmentUploader interface {
-	Upload(ctx context.Context, traceID string, attachments []domain.AttachmentDO) ([]domain.AttachmentDO, error)
+	Upload(ctx context.Context, traceID string, attachments []domain.Attachment) ([]domain.AttachmentDO, error)
 }
 
 const (
@@ -72,9 +72,16 @@ func (h *Handler) handleSend(w http.ResponseWriter, r *http.Request) {
 	traceID := uuid.New().String()
 	ctx := r.Context()
 
+	r.Body = http.MaxBytesReader(w, r.Body, h.cfg.MaxBodySize)
 	var req domain.MailRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, domain.ErrJSONParseError, "invalid JSON body", traceID)
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			writeError(w, http.StatusRequestEntityTooLarge, domain.ErrBodyTooLarge,
+				fmt.Sprintf("request body exceeds limit of %d bytes", h.cfg.MaxBodySize), traceID)
+		} else {
+			writeError(w, http.StatusBadRequest, domain.ErrJSONParseError, "invalid JSON body", traceID)
+		}
 		return
 	}
 
@@ -119,14 +126,10 @@ func (h *Handler) handleSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Decode attachments and upload to Object Store
-	attachments, err := decodeAttachments(req.Attachments)
-	if err != nil {
-		h.writeValidationError(w, err, traceID)
-		return
-	}
-	if len(attachments) > 0 {
-		attachments, err = h.attStore.Upload(ctx, traceID, attachments)
+	// Stage 6: upload attachments to Object Store (streaming base64 decode)
+	var attachmentDOs []domain.AttachmentDO
+	if len(req.Attachments) > 0 {
+		attachmentDOs, err = h.attStore.Upload(ctx, traceID, req.Attachments)
 		if err != nil {
 			slog.ErrorContext(ctx, "attachment upload failed",
 				slog.String("traceId", traceID),
@@ -148,7 +151,7 @@ func (h *Handler) handleSend(w http.ResponseWriter, r *http.Request) {
 		Subject:         req.Subject,
 		BodyContent:     req.BodyContent,
 		HtmlBodyContent: req.HtmlBodyContent,
-		Attachments:     attachments,
+		Attachments:     attachmentDOs,
 		TraceContext:    req.TraceContext,
 		Test:            sender.Test,
 	}

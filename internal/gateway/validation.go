@@ -3,6 +3,7 @@ package gateway
 import (
 	"encoding/base64"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/go-playground/validator/v10"
@@ -42,16 +43,22 @@ func validateRequest(req *domain.MailRequest, maxBodySize int64, mimeWhitelist [
 					Message: fmt.Sprintf("MIME type not allowed: %s", a.MimeType),
 				}
 			}
-			// base64 length × 3/4 ≈ raw bytes
-			rawBytes := int64(len(a.Content)) * 3 / 4
-			totalBytes += rawBytes
+			r := base64.NewDecoder(base64.StdEncoding, strings.NewReader(a.Content))
+			n, ioErr := io.Copy(io.Discard, r)
+			if ioErr != nil {
+				return &domain.ValidationError{
+					Code:    domain.ErrInvalidAttachmentType,
+					Message: fmt.Sprintf("attachment %q: invalid base64", a.Name),
+				}
+			}
+			totalBytes += n
 		}
 
 		maxBytes := int64(maxAttachMB) * 1024 * 1024
 		if totalBytes > maxBytes {
 			return &domain.ValidationError{
 				Code:    domain.ErrAttachmentTooLarge,
-				Message: fmt.Sprintf("total attachment size ~%d bytes exceeds limit %d MB", totalBytes, maxAttachMB),
+				Message: fmt.Sprintf("total attachment size %d bytes exceeds limit %d MB", totalBytes, maxAttachMB),
 			}
 		}
 	}
@@ -86,24 +93,4 @@ func checkDomains(sender domain.Sender, req *domain.MailRequest) error {
 		}
 	}
 	return nil
-}
-
-// decodeAttachments converts base64 content strings to raw bytes.
-func decodeAttachments(atts []domain.Attachment) ([]domain.AttachmentDO, error) {
-	result := make([]domain.AttachmentDO, 0, len(atts))
-	for _, a := range atts {
-		raw, err := base64.StdEncoding.DecodeString(a.Content)
-		if err != nil {
-			return nil, &domain.ValidationError{
-				Code:    domain.ErrInvalidAttachmentType,
-				Message: fmt.Sprintf("attachment %q: invalid base64", a.Name),
-			}
-		}
-		result = append(result, domain.AttachmentDO{
-			Name:        a.Name,
-			ContentType: a.MimeType,
-			Content:     raw,
-		})
-	}
-	return result, nil
 }

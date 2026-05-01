@@ -1,10 +1,11 @@
 package gateway
 
 import (
-	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/nats-io/nats.go"
 
@@ -21,17 +22,18 @@ func NewAttachmentStore(store nats.ObjectStore) *AttachmentStore {
 	return &AttachmentStore{store: store}
 }
 
-func (a *AttachmentStore) Upload(ctx context.Context, traceID string, attachments []domain.AttachmentDO) ([]domain.AttachmentDO, error) {
+func (a *AttachmentStore) Upload(ctx context.Context, traceID string, attachments []domain.Attachment) ([]domain.AttachmentDO, error) {
 	result := make([]domain.AttachmentDO, len(attachments))
 	for i, att := range attachments {
 		key := traceID + "/" + strconv.Itoa(i)
-		_, err := a.store.Put(&nats.ObjectMeta{Name: key}, bytes.NewReader(att.Content))
+		r := base64.NewDecoder(base64.StdEncoding, strings.NewReader(att.Content))
+		_, err := a.store.Put(&nats.ObjectMeta{Name: key}, r)
 		if err != nil {
 			return nil, fmt.Errorf("object store put %s: %w", key, err)
 		}
 		result[i] = domain.AttachmentDO{
 			Name:        att.Name,
-			ContentType: att.ContentType,
+			ContentType: att.MimeType,
 			ObjectKey:   key,
 		}
 	}
