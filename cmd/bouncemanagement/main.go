@@ -10,6 +10,7 @@ import (
 
 	"dispatch/internal/bounce"
 	"dispatch/internal/config"
+	"dispatch/internal/msgraph"
 	"dispatch/internal/natsutil"
 )
 
@@ -39,8 +40,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	graphBounce := newGraphBounceClient(cfg)
-	crawler := bounce.NewCrawler(graphBounce, js, cfg.MSGraphBounceMailbox)
+	graphClient := msgraph.NewClient(cfg.MSGraphTenantID, cfg.MSGraphClientID, cfg.MSGraphClientSecret, cfg.GraphProxyURL, cfg.GraphMockToken)
+	crawler := bounce.NewCrawler(msgraph.NewBounceService(graphClient), js, cfg.MSGraphBounceMailbox)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -66,39 +67,4 @@ func main() {
 			}
 		}
 	}
-}
-
-// graphBounceClient adapts the msgraph HTTP client to the bounce.graphClient interface.
-// It implements GetUnreadMessages and MarkAsRead via MS Graph.
-type graphBounceClient struct {
-	tenantID     string
-	clientID     string
-	clientSecret string
-}
-
-func newGraphBounceClient(cfg config.Config) *graphBounceClient {
-	return &graphBounceClient{
-		tenantID:     cfg.MSGraphTenantID,
-		clientID:     cfg.MSGraphClientID,
-		clientSecret: cfg.MSGraphClientSecret,
-	}
-}
-
-func (g *graphBounceClient) GetUnreadMessages(ctx context.Context, mailbox string) ([]bounce.NDRMessage, error) {
-	// Production implementation would call:
-	// GET https://graph.microsoft.com/v1.0/users/{mailbox}/messages?$filter=isRead eq false
-	// and parse the response into []NDRMessage.
-	// Deferred to avoid circular import; the full implementation uses msgraph.Client.
-	slog.InfoContext(ctx, "GetUnreadMessages not yet wired to MS Graph client",
-		slog.String("mailbox", mailbox),
-	)
-	return nil, nil
-}
-
-func (g *graphBounceClient) MarkAsRead(ctx context.Context, mailbox, messageID string) error {
-	slog.InfoContext(ctx, "MarkAsRead not yet wired to MS Graph client",
-		slog.String("mailbox", mailbox),
-		slog.String("messageId", messageID),
-	)
-	return nil
 }
