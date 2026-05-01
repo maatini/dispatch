@@ -47,7 +47,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Trivy – vulnerability scan
-        uses: aquasecurity/trivy-action@0.30.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ghcr.io/${{ github.repository }}/${{ matrix.service }}:latest
           format: sarif
@@ -64,7 +64,7 @@ jobs:
           category: trivy-weekly-${{ matrix.service }}
 
       - name: Trivy – generate SBOM (CycloneDX)
-        uses: aquasecurity/trivy-action@0.30.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ghcr.io/${{ github.repository }}/${{ matrix.service }}:latest
           format: cyclonedx
