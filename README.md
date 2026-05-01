@@ -1,8 +1,9 @@
 # dispatch
 
 ![Build Status](https://img.shields.io/github/actions/workflow/status/maatini/dispatch/build.yml?branch=main)
-![Go Version](https://img.shields.io/github/go-mod/go-version/maatini/dispatch)
-![License](https://img.shields.io/github/license/maatini/dispatch)
+![Go Version](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go)
+![Tests](https://img.shields.io/badge/tests-112-brightgreen)
+![Quality Gate](https://img.shields.io/badge/quality_gate-PASSED-brightgreen?logo=sonarqube)
 
 <div align="center">
   <img src="assets/banner.png" alt="Dispatch Service Banner" width="100%" />
@@ -81,6 +82,7 @@ MS_GRAPH_TENANT_ID      \
 MS_GRAPH_CLIENT_ID       } entfallen wenn MS_GRAPH_MOCK_TOKEN gesetzt ist
 MS_GRAPH_CLIENT_SECRET  /
 MS_GRAPH_SENDER_EMAIL
+DISPATCH_ADMIN_AUTH_SECRET   # HMAC-Schlüssel für Admin-API JWT-Auth
 ```
 
 ### Optional
@@ -161,26 +163,26 @@ devbox run sonar             # Coverage erzeugen + SonarQube-Scan
 
 | Metrik | Wert |
 |--------|------|
-| Unit-Tests | 97 |
-| Statement Coverage (getestete Packages) | 84 – 100 % |
+| Unit-Tests | 112 |
 | Mutation Score (alle Core-Packages) | 100 % Efficacy |
 | Mutation Score Threshold | ≥ 70 % (efficacy + mutation-coverage) |
 | SonarQube Quality Gate | PASSED |
 
-**Coverage pro Package:**
+**Coverage pro Package** (Unit-Tests, kein NATS/Docker):
 
-| Package | Coverage |
-|---------|---------|
-| `internal/config` | 96 % |
-| `internal/domain` | 100 % |
-| `internal/gateway` | 95 % |
-| `internal/hash` | 100 % |
-| `internal/msgraph` | 88 % |
-| `internal/pii` | 100 % |
-| `internal/quota` | 92 % |
-| `internal/sender` | 95 % |
-| `internal/spam` | 88 % |
-| `internal/worker` | 84 % |
+| Package | Coverage | Anmerkung |
+|---------|---------|-----------|
+| `internal/admin` | 13 % | Resolver erfordert NATS; `auth.go` 93 % |
+| `internal/config` | 98 % | |
+| `internal/domain` | 100 % | |
+| `internal/gateway` | 75 % | `AttachmentStore.Upload` nur via Integration |
+| `internal/hash` | 100 % | |
+| `internal/msgraph` | 46 % | `Service.SendEmail` nur via Integration |
+| `internal/pii` | 100 % | |
+| `internal/quota` | 89 % | |
+| `internal/sender` | 92 % | |
+| `internal/spam` | 78 % | |
+| `internal/worker` | 55 % | Consumer/AttachStore nur via Integration |
 
 Mutation-Tests laufen mit [gremlins](https://github.com/go-gremlins/gremlins) (`go tool gremlins unleash`) auf den Packages `internal/gateway`, `internal/quota`, `internal/spam`, `internal/worker`, `internal/pii`, `internal/hash` und `internal/msgraph`. Die Schwellwerte sind in [`.gremlins.yaml`](.gremlins.yaml) hinterlegt.
 
@@ -219,6 +221,7 @@ Content-Type: application/json
 |--------|-----------|
 | `202` | Nachricht an NATS übergeben |
 | `400` | Validierungsfehler (Pflichtfelder, Domain, Spam, MIME) |
+| `413` | Request-Body überschreitet Größenlimit (`DISPATCH_VALIDATION_MAX_BODY_SIZE`) |
 | `429` | Tages-Quota überschritten (`X-RateLimit-Limit`, `X-RateLimit-Remaining`) |
 | `503` | NATS nicht erreichbar, Quota-State-Fehler oder Attachment-Upload fehlgeschlagen |
 
@@ -231,6 +234,12 @@ GET /health/ready  → 200
 ```
 
 ### Admin GraphQL
+
+Alle Requests an `/graphql` erfordern einen gültigen JWT im Header:
+```
+Authorization: Bearer <token>
+```
+Token: HMAC-SHA256, signiert mit `DISPATCH_ADMIN_AUTH_SECRET`, `exp`-Claim erforderlich.
 
 ```
 POST /graphql

@@ -139,6 +139,8 @@ NATS Consumer (pull, explicit ACK, 30s ack-wait)
 
 ## MS Graph Integration
 
+### E-Mail-Versand (`msgraph.Service`)
+
 ```
 SendEmail(req)
     │
@@ -160,6 +162,27 @@ Gesamtgröße Attachments?
                    POST .../messages/{id}/send
 ```
 
+### NDR-Crawling (`msgraph.BounceService`)
+
+```
+BounceService.GetUnreadMessages(mailbox)
+    │
+    ▼
+GET /users/{mailbox}/messages?$filter=isRead+eq+false&$select=id,subject,body
+    │
+    ▼
+Parse → []NDRMessage{ID, Subject, Body}
+    │
+    ▼
+Crawler.process → Trace-ID extrahieren → DISPATCH_BOUNCES
+    │
+    ▼
+BounceService.MarkAsRead(mailbox, messageID)
+    │
+    ▼
+PATCH /users/{mailbox}/messages/{id}   {"isRead": true}
+```
+
 **Fehler-Handling im HTTP-Client:**
 
 | HTTP-Status | Fehlertyp | Verhalten |
@@ -176,6 +199,7 @@ Gesamtgröße Attachments?
 
 | Fehler | HTTP | Auslöser |
 |---|---|---|
+| Request-Body überschreitet Limit | 413 | `http.MaxBytesReader` vor JSON-Decode |
 | Validierungsfehler (Format, MIME, Größe) | 400 | Stage 1 |
 | Unbekannter `appTag` | 400 | Stage 2 |
 | Domain nicht erlaubt | 400 | Stage 3 |
@@ -195,7 +219,9 @@ Gesamtgröße Attachments?
 
 **Attachments:** NATS Object Store entkoppelt Payload-Größe vom JetStream-Limit. Bucket-TTL (72 h) bereinigt Waisen-Objekte nach Worker-Crash ohne Cleanup.
 
-**Bounce-Matching:** Dreistufig — Trace-ID im NDR-Body → Anhänge → Empfänger-Lookup im Audit-Stream (implementiert im Crawler, Stufen 2/3 deferiert).
+**Bounce-Matching:** `BounceService` (MS Graph) ruft alle 15 Minuten ungelesene Nachrichten aus der Bounce-Mailbox ab, extrahiert die Trace-ID via `X-Dispatch-TraceId`-Header im NDR-Body und schreibt einen `BounceRecord` nach `DISPATCH_BOUNCES`. Verarbeitete Nachrichten werden via `PATCH .../messages/{id}` als gelesen markiert.
+
+**Attachment-Streaming:** Base64-Inhalt von Anhängen wird im Gateway nie vollständig als `[]byte` dekodiert. Validierung (Größe, Formatprüfung) und Upload in den NATS Object Store erfolgen durch Streaming via `base64.NewDecoder` — O(1) Speicher unabhängig von der Anhangsgröße.
 
 ---
 
@@ -206,10 +232,11 @@ Alle Werte kommen aus Umgebungsvariablen. Keine Config-Dateien.
 **Pflichtfelder** (ohne die kein Start):
 ```
 NATS_URL
-MS_GRAPH_TENANT_ID      \
-MS_GRAPH_CLIENT_ID       } entfallen wenn MS_GRAPH_MOCK_TOKEN gesetzt
-MS_GRAPH_CLIENT_SECRET  /
+MS_GRAPH_TENANT_ID           \
+MS_GRAPH_CLIENT_ID            } entfallen wenn MS_GRAPH_MOCK_TOKEN gesetzt
+MS_GRAPH_CLIENT_SECRET       /
 MS_GRAPH_SENDER_EMAIL
+DISPATCH_ADMIN_AUTH_SECRET   # HMAC-Schlüssel für Admin-API JWT-Auth
 ```
 
 **Optionale Felder (Auswahl):**
