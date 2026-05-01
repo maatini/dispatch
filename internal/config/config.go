@@ -24,6 +24,7 @@ type Config struct {
 	GraphRateLimiterSkip bool
 	GraphProxyURL        string // MS_GRAPH_PROXY_URL — routes Graph calls through Dev Proxy
 	GraphMockToken       string // MS_GRAPH_MOCK_TOKEN — skips OAuth2, makes Graph credentials optional
+	AdminAuthSecret      string // DISPATCH_ADMIN_AUTH_SECRET — HMAC secret for Admin-API JWT auth
 }
 
 func Load() (Config, error) {
@@ -55,6 +56,11 @@ func Load() (Config, error) {
 		}
 	}
 
+	adminAuthSecret := os.Getenv("DISPATCH_ADMIN_AUTH_SECRET")
+	if adminAuthSecret == "" {
+		return Config{}, fmt.Errorf("DISPATCH_ADMIN_AUTH_SECRET is required")
+	}
+
 	bounceMailbox := os.Getenv("MS_GRAPH_BOUNCE_MAILBOX")
 	if bounceMailbox == "" {
 		bounceMailbox = envOr("MS_GRAPH_SENDER_EMAIL", "noreply@dev.local")
@@ -79,6 +85,7 @@ func Load() (Config, error) {
 		GraphRateLimiterSkip: os.Getenv("DISPATCH_GRAPH_RATE_LIMITER_SKIP_SLEEP") == "true",
 		GraphProxyURL:        graphProxyURL,
 		GraphMockToken:       graphMockToken,
+		AdminAuthSecret:      adminAuthSecret,
 	}, nil
 }
 

@@ -57,7 +57,7 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("/graphql", handler)
+	mux.Handle("/graphql", admin.AuthMiddleware(cfg.AdminAuthSecret)(handler))
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"UP"}`))

@@ -18,6 +18,7 @@ func setRequiredEnv(t *testing.T) {
 	t.Setenv("MS_GRAPH_CLIENT_ID", "client")
 	t.Setenv("MS_GRAPH_CLIENT_SECRET", "secret")
 	t.Setenv("MS_GRAPH_SENDER_EMAIL", testSenderEmail)
+	t.Setenv("DISPATCH_ADMIN_AUTH_SECRET", "test-secret")
 }
 
 func TestLoad_Success(t *testing.T) {
@@ -60,6 +61,16 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 }
 
+func TestLoad_MissingAdminAuthSecret(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("DISPATCH_ADMIN_AUTH_SECRET", "")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for missing DISPATCH_ADMIN_AUTH_SECRET")
+	}
+}
+
 func TestLoad_MissingNatsURL(t *testing.T) {
 	t.Setenv("NATS_URL", "")
 	t.Setenv("MS_GRAPH_TENANT_ID", "tenant")
@@ -75,6 +86,7 @@ func TestLoad_MissingNatsURL(t *testing.T) {
 
 func TestLoad_MissingGraphCredentials(t *testing.T) {
 	t.Setenv("NATS_URL", testNatsURL)
+	t.Setenv("DISPATCH_ADMIN_AUTH_SECRET", "test-secret")
 	// MS_GRAPH_MOCK_TOKEN is not set → credentials are required
 
 	cases := []struct {
@@ -107,6 +119,7 @@ func TestLoad_MissingGraphCredentials(t *testing.T) {
 func TestLoad_MockTokenSkipsCredentialCheck(t *testing.T) {
 	t.Setenv("NATS_URL", testNatsURL)
 	t.Setenv("MS_GRAPH_MOCK_TOKEN", "dev-token")
+	t.Setenv("DISPATCH_ADMIN_AUTH_SECRET", "test-secret")
 	// deliberately leave Graph credentials unset
 
 	cfg, err := Load()
