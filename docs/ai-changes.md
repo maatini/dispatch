@@ -30,6 +30,15 @@
 **Ergebnis:** Keine Tests betroffen (Dokumentation).
 **Hinweis:** **WICHTIG** – Ab sofort nach jeder Änderung Log-Eintrag pflichtig.
 
+## 2026-05-01 — GitHub Workflows: Docker-Build, Trivy-Scan, SBOM
+
+**Begründung:** CI deckt jetzt den vollständigen Image-Lifecycle ab: Build → Vulnerability-Scan → SBOM → Push. Trivy SARIF-Upload ins GitHub Security-Tab ermöglicht Triage ohne externen Scan-Server.
+**Änderungen:**
+- `.github/workflows/build.yml` (neuer `docker`-Job: Matrix über 4 Services, Trivy SARIF + CycloneDX SBOM, GHCR-Push nur auf main)
+- `.github/workflows/security.yml` (neuer `trivy`-Job: wöchentlicher Scan der GHCR-Images `:latest`, SARIF + SBOM)
+**Ergebnis:** Workflow-Änderungen, keine lokalen Tests betroffen.
+**Hinweis:** `security.yml` trivy-Job setzt voraus, dass `:latest`-Images bereits in GHCR existieren (erster Push via `build.yml` auf main nötig).
+
 ## 2026-05-01 — Dockerfile + .dockerignore für alle Services
 
 **Begründung:** Ein einziges parametrisiertes Dockerfile (`ARG SERVICE`) statt vier separate — vermeidet Duplikation und hält Build-Logik an einem Ort. Distroless-Runtime-Image (4,9 MB, non-root, kein Shell) für minimale Angriffsfläche in AKS.
