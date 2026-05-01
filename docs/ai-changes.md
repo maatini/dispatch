@@ -30,6 +30,14 @@
 **Ergebnis:** Keine Tests betroffen (Dokumentation).
 **Hinweis:** **WICHTIG** – Ab sofort nach jeder Änderung Log-Eintrag pflichtig.
 
+## 2026-05-01 — CI-Fix: security.yml Push-Trigger entfernt, CodeQL v4
+
+**Begründung:** `security.yml` lief concurrent mit `build.yml` bei Push auf main — GHCR-Images existieren zu diesem Zeitpunkt noch nicht. Wöchentlicher Schedule reicht, da `build.yml` bereits jeden Build scannt.
+**Änderungen:**
+- `.github/workflows/security.yml` (Push-Trigger entfernt; `codeql-action/upload-sarif@v3` → `v4`)
+- `.github/workflows/build.yml` (`codeql-action/upload-sarif@v3` → `v4`)
+**Ergebnis:** Workflow-Änderung; kein lokaler Build betroffen.
+
 ## 2026-05-01 — Versionierung: internal/version + ldflags
 
 **Begründung:** Einheitliche Versionsnummer 0.5.0 in allen Services, beim Start geloggt und via `-X dispatch/internal/version.Version` zur Build-Zeit injizierbar.
