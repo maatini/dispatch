@@ -29,3 +29,12 @@
 - `docs/ai-changes.md` (neu angelegt mit Template + Beispielen)
 **Ergebnis:** Keine Tests betroffen (Dokumentation).
 **Hinweis:** **WICHTIG** – Ab sofort nach jeder Änderung Log-Eintrag pflichtig.
+
+## 2026-05-01 — Dockerfile + .dockerignore für alle Services
+
+**Begründung:** Ein einziges parametrisiertes Dockerfile (`ARG SERVICE`) statt vier separate — vermeidet Duplikation und hält Build-Logik an einem Ort. Distroless-Runtime-Image (4,9 MB, non-root, kein Shell) für minimale Angriffsfläche in AKS.
+**Änderungen:**
+- `Dockerfile` (multi-stage, `ARG SERVICE`, Builder golang:1.25-alpine, Runtime distroless/static-debian12:nonroot)
+- `.dockerignore` (.git, .devbox, coverage-Artefakte ausgeschlossen)
+**Ergebnis:** `docker build --build-arg SERVICE=mail-gateway` → Image 4,9 MB, Build erfolgreich.
+**Hinweis:** `GOARCH=amd64` hardcoded — bei ARM-Deployments (Apple Silicon Nodes) `--platform linux/amd64` oder `GOARCH` per Build-Arg anpassen.
