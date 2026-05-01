@@ -1,0 +1,8 @@
+.git/
+.devbox/
+.claude/
+dispatch/
+coverage.out
+coverage.html
+*.test
+dev-proxy/
