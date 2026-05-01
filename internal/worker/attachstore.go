@@ -3,12 +3,14 @@ package worker
 import (
 	"fmt"
 	"io"
-	"log/slog"
 
 	"github.com/nats-io/nats.go"
 
 	"dispatch/internal/domain"
+	"dispatch/internal/loggy"
 )
+
+var attachLog = loggy.GetLogger("AttachmentStore")
 
 // AttachmentStore fetches and deletes attachment objects from NATS Object Store.
 type AttachmentStore struct {
@@ -54,9 +56,9 @@ func (a *AttachmentStore) Cleanup(attachments []domain.AttachmentDO) {
 			continue
 		}
 		if err := a.store.Delete(att.ObjectKey); err != nil {
-			slog.Warn("object store delete failed",
-				slog.String("key", att.ObjectKey),
-				slog.String("error", err.Error()),
+			attachLog.Warn("object store delete failed",
+				loggy.Kv("key", att.ObjectKey),
+				loggy.Kv("error", err.Error()),
 			)
 		}
 	}

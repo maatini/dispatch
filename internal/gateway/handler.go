@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -15,8 +14,11 @@ import (
 	"dispatch/internal/config"
 	"dispatch/internal/domain"
 	"dispatch/internal/hash"
+	"dispatch/internal/loggy"
 	"dispatch/internal/pii"
 )
+
+var handlerLog = loggy.GetLogger("Handler")
 
 type senderLookup interface {
 	Get(appTag string) (domain.Sender, error)
@@ -102,10 +104,10 @@ func (h *Handler) handleSend(w http.ResponseWriter, r *http.Request) {
 	if err := checkDomains(sender, &req); err != nil {
 		allRecips := append(append(req.Recipients, req.CcRecipients...), req.BccRecipients...)
 		for _, addr := range allRecips {
-			slog.WarnContext(ctx, "domain not whitelisted",
-				slog.String("traceId", traceID),
-				slog.String("recipient", pii.MaskEmail(addr)),
-				slog.String("appTag", req.AppTag),
+			handlerLog.Warnc(ctx, loggy.CategoryBusinessRuleViolation, "domain not whitelisted",
+				loggy.Kv("traceId", traceID),
+				loggy.Kv("recipient", pii.MaskEmail(addr)),
+				loggy.Kv("appTag", req.AppTag),
 			)
 		}
 		h.writeValidationError(w, err, traceID)
@@ -131,9 +133,8 @@ func (h *Handler) handleSend(w http.ResponseWriter, r *http.Request) {
 	if len(req.Attachments) > 0 {
 		attachmentDOs, err = h.attStore.Upload(ctx, traceID, req.Attachments)
 		if err != nil {
-			slog.ErrorContext(ctx, "attachment upload failed",
-				slog.String("traceId", traceID),
-				slog.String("error", err.Error()),
+			handlerLog.Critical("attachment upload failed", err,
+				loggy.Kv("traceId", traceID),
 			)
 			writeError(w, http.StatusServiceUnavailable, domain.ErrNatsUnavailable,
 				"Attachment storage unavailable. Bitte erneut versuchen.", traceID)
@@ -157,19 +158,18 @@ func (h *Handler) handleSend(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.nats.Publish(ctx, msg); err != nil {
-		slog.ErrorContext(ctx, "NATS publish failed",
-			slog.String("traceId", traceID),
-			slog.String("appTag", req.AppTag),
-			slog.String("error", err.Error()),
+		handlerLog.Critical("NATS publish failed", err,
+			loggy.Kv("traceId", traceID),
+			loggy.Kv("appTag", req.AppTag),
 		)
 		writeError(w, http.StatusServiceUnavailable, domain.ErrNatsUnavailable,
 			"Broker nicht erreichbar. Bitte erneut versuchen.", traceID)
 		return
 	}
 
-	slog.InfoContext(ctx, "mail dispatched to NATS",
-		slog.String("traceId", traceID),
-		slog.String("appTag", req.AppTag),
+	handlerLog.Infoc(ctx, loggy.CategoryBusinessLogic, "mail dispatched to NATS",
+		loggy.Kv("traceId", traceID),
+		loggy.Kv("appTag", req.AppTag),
 	)
 
 	w.Header().Set(headerContentType, contentTypeJSON)

@@ -10,33 +10,36 @@ import (
 
 	"dispatch/internal/bounce"
 	"dispatch/internal/config"
+	"dispatch/internal/loggy"
 	"dispatch/internal/msgraph"
 	"dispatch/internal/natsutil"
 )
+
+var log = loggy.GetLogger("bouncemanagement")
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
 	cfg, err := config.Load()
 	if err != nil {
-		slog.Error("config load", slog.String("error", err.Error()))
+		log.Critical("config load", err)
 		os.Exit(1)
 	}
 
 	nc, js, err := natsutil.Connect(cfg.NatsURL)
 	if err != nil {
-		slog.Error("NATS connect", slog.String("error", err.Error()))
+		log.Critical("NATS connect", err)
 		os.Exit(1)
 	}
 	defer nc.Close()
 
 	spamTTL := time.Duration(cfg.SpamTimeoutSeconds) * time.Second
 	if err := natsutil.ProvisionStreams(js); err != nil {
-		slog.Error("provision streams", slog.String("error", err.Error()))
+		log.Critical("provision streams", err)
 		os.Exit(1)
 	}
 	if err := natsutil.ProvisionKVBuckets(js, spamTTL); err != nil {
-		slog.Error("provision KV", slog.String("error", err.Error()))
+		log.Critical("provision KV", err)
 		os.Exit(1)
 	}
 
@@ -49,21 +52,21 @@ func main() {
 	ticker := time.NewTicker(15 * time.Minute)
 	defer ticker.Stop()
 
-	slog.Info("bouncemanagement started", slog.String("mailbox", cfg.MSGraphBounceMailbox))
+	log.Info("bouncemanagement started", loggy.Kv("mailbox", cfg.MSGraphBounceMailbox))
 
 	// run immediately on start
 	if err := crawler.Run(ctx); err != nil {
-		slog.Error("crawler error", slog.String("error", err.Error()))
+		log.Error("crawler error", err)
 	}
 
 	for {
 		select {
 		case <-ctx.Done():
-			slog.Info("bouncemanagement stopped")
+			log.Info("bouncemanagement stopped")
 			return
 		case <-ticker.C:
 			if err := crawler.Run(ctx); err != nil {
-				slog.Error("crawler error", slog.String("error", err.Error()))
+				log.Error("crawler error", err)
 			}
 		}
 	}

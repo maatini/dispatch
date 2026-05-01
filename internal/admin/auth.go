@@ -3,12 +3,15 @@ package admin
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
+
+	"dispatch/internal/loggy"
 )
+
+var authLog = loggy.GetLogger("AuthMiddleware")
 
 // AuthMiddleware validates Bearer JWTs signed with HMAC-SHA256.
 // Requests without a valid token receive 401; /health must be registered outside this middleware.
@@ -43,9 +46,9 @@ func bearerToken(r *http.Request) (string, bool) {
 }
 
 func writeUnauthorized(w http.ResponseWriter, r *http.Request) {
-	slog.Warn("unauthorized request",
-		slog.String("method", r.Method),
-		slog.String("path", r.URL.Path),
+	authLog.Warn("unauthorized request",
+		loggy.Kv("method", r.Method),
+		loggy.Kv("path", r.URL.Path),
 	)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)

@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/nats-io/nats.go"
 
 	"dispatch/internal/domain"
+	"dispatch/internal/loggy"
 	"dispatch/internal/msgraph"
 	"dispatch/internal/natsutil"
 	"dispatch/internal/pii"
@@ -34,6 +34,8 @@ type attachmentFetcher interface {
 	Cleanup(attachments []domain.AttachmentDO)
 }
 
+var procLog = loggy.GetLogger("Processor")
+
 // Processor handles NATS messages: deserialize → dedup → send → audit.
 type Processor struct {
 	graph     emailSender
@@ -51,11 +53,11 @@ func (p *Processor) Handle(ctx context.Context, msg *nats.Msg) {
 	if traceID == "" {
 		traceID = "unknown"
 	}
-	log := slog.With(slog.String("traceId", traceID))
+	log := procLog.With(loggy.Kv("traceId", traceID))
 
 	var req domain.MailRequestDO
 	if err := json.Unmarshal(msg.Data, &req); err != nil {
-		log.ErrorContext(ctx, "dead letter: JSON parse failed", slog.String("error", err.Error()))
+		log.Error("dead letter: JSON parse failed", err)
 		p.writeDeadLetter(ctx, msg.Data, err)
 		_ = msg.Ack()
 		return
@@ -63,7 +65,7 @@ func (p *Processor) Handle(ctx context.Context, msg *nats.Msg) {
 
 	// idempotent dedup
 	if _, err := p.delivered.Get(traceID); err == nil {
-		log.InfoContext(ctx, "duplicate delivery detected, acking and skipping")
+		log.Info("duplicate delivery detected, acking and skipping")
 		_ = msg.Ack()
 		return
 	}
@@ -72,9 +74,7 @@ func (p *Processor) Handle(ctx context.Context, msg *nats.Msg) {
 	if len(req.Attachments) > 0 {
 		fetched, err := p.attStore.Fetch(req.Attachments)
 		if err != nil {
-			log.ErrorContext(ctx, "attachment fetch failed, not acking",
-				slog.String("error", err.Error()),
-			)
+			log.Error("attachment fetch failed, not acking", err)
 			return // no ack → JetStream redelivers
 		}
 		req.Attachments = fetched
@@ -87,11 +87,11 @@ func (p *Processor) Handle(ctx context.Context, msg *nats.Msg) {
 	p.processSend(ctx, req, traceID, msg, log)
 }
 
-func (p *Processor) processTestMode(ctx context.Context, req domain.MailRequestDO, traceID string, msg *nats.Msg, log *slog.Logger) {
-	log.InfoContext(ctx, "test mode: skipping MS Graph call")
+func (p *Processor) processTestMode(ctx context.Context, req domain.MailRequestDO, traceID string, msg *nats.Msg, log *loggy.Loggy) {
+	log.Info("test mode: skipping MS Graph call")
 	p.writeAudit(ctx, req, domain.StatusTestSuccess, "")
 	if _, err := p.delivered.Put(traceID, []byte{1}); err != nil {
-		log.WarnContext(ctx, "delivered KV put failed", slog.String("error", err.Error()))
+		log.Warn("delivered KV put failed", loggy.Kv("error", err.Error()))
 	}
 	_ = msg.Ack()
 	if len(req.Attachments) > 0 {
@@ -99,20 +99,19 @@ func (p *Processor) processTestMode(ctx context.Context, req domain.MailRequestD
 	}
 }
 
-func (p *Processor) processSend(ctx context.Context, req domain.MailRequestDO, traceID string, msg *nats.Msg, log *slog.Logger) {
+func (p *Processor) processSend(ctx context.Context, req domain.MailRequestDO, traceID string, msg *nats.Msg, log *loggy.Loggy) {
 	if err := p.graph.SendEmail(ctx, req); err != nil {
 		var transient *msgraph.GraphTransientError
 		if errors.As(err, &transient) {
-			log.WarnContext(ctx, "transient graph error, not acking",
-				slog.String("sender", pii.MaskEmail(req.Sender)),
-				slog.String("error", err.Error()),
+			log.Warnc(ctx, loggy.CategoryAPIExternalFailure, "transient graph error, not acking",
+				loggy.Kv("sender", pii.MaskEmail(req.Sender)),
+				loggy.Kv("error", err.Error()),
 			)
 			// no ack → JetStream redelivers; keep objects in store for next attempt
 			return
 		}
-		log.ErrorContext(ctx, "permanent graph error, acking with FAILED",
-			slog.String("sender", pii.MaskEmail(req.Sender)),
-			slog.String("error", err.Error()),
+		log.Errorc(ctx, loggy.CategoryAPIClientError, "permanent graph error, acking with FAILED", err,
+			loggy.Kv("sender", pii.MaskEmail(req.Sender)),
 		)
 		p.writeAudit(ctx, req, domain.StatusFailed, err.Error())
 		_ = msg.Ack()
@@ -121,13 +120,13 @@ func (p *Processor) processSend(ctx context.Context, req domain.MailRequestDO, t
 		}
 		return
 	}
-	log.InfoContext(ctx, "mail delivered",
-		slog.String("appTag", req.AppTag),
-		slog.String("sender", pii.MaskEmail(req.Sender)),
+	log.Infoc(ctx, loggy.CategoryBusinessLogic, "mail delivered",
+		loggy.Kv("appTag", req.AppTag),
+		loggy.Kv("sender", pii.MaskEmail(req.Sender)),
 	)
 	p.writeAudit(ctx, req, domain.StatusDelivered, "")
 	if _, err := p.delivered.Put(traceID, []byte{1}); err != nil {
-		log.WarnContext(ctx, "delivered KV put failed", slog.String("error", err.Error()))
+		log.Warn("delivered KV put failed", loggy.Kv("error", err.Error()))
 	}
 	_ = msg.Ack()
 	if len(req.Attachments) > 0 {
@@ -148,11 +147,11 @@ func (p *Processor) writeAudit(ctx context.Context, req domain.MailRequestDO, st
 	}
 	data, err := json.Marshal(record)
 	if err != nil {
-		slog.ErrorContext(ctx, "marshal audit record", slog.String("error", err.Error()))
+		procLog.Error("marshal audit record", err)
 		return
 	}
 	if _, err := p.js.Publish(natsutil.SubjectAudit, data); err != nil {
-		slog.ErrorContext(ctx, "publish audit record", slog.String("error", err.Error()))
+		procLog.Error("publish audit record", err)
 	}
 }
 
@@ -164,10 +163,10 @@ func (p *Processor) writeDeadLetter(ctx context.Context, payload []byte, cause e
 	}
 	data, err := json.Marshal(dl)
 	if err != nil {
-		slog.ErrorContext(ctx, "marshal dead letter", slog.String("error", err.Error()))
+		procLog.Error("marshal dead letter", err)
 		return
 	}
 	if _, err := p.js.Publish(natsutil.SubjectDeadLetter, data); err != nil {
-		slog.ErrorContext(ctx, "publish dead letter", slog.String("error", err.Error()))
+		procLog.Error("publish dead letter", err)
 	}
 }

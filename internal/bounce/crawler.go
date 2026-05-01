@@ -4,15 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"regexp"
 	"time"
 
 	"github.com/nats-io/nats.go"
 
 	"dispatch/internal/domain"
+	"dispatch/internal/loggy"
 	"dispatch/internal/natsutil"
 )
+
+var crawlerLog = loggy.GetLogger("Crawler")
 
 var traceIDRegex = regexp.MustCompile(`X-Dispatch-TraceId:\s*([0-9a-f-]{36})`)
 
@@ -45,19 +47,19 @@ func (c *Crawler) Run(ctx context.Context) error {
 		return fmt.Errorf("get unread messages: %w", err)
 	}
 
-	slog.InfoContext(ctx, "bounce crawler: found messages", slog.Int("count", len(msgs)))
+	crawlerLog.Info("bounce crawler: found messages", loggy.Kv("count", len(msgs)))
 
 	for _, msg := range msgs {
 		if err := c.process(ctx, msg); err != nil {
-			slog.WarnContext(ctx, "bounce process failed",
-				slog.String("messageId", msg.ID),
-				slog.String("error", err.Error()),
+			crawlerLog.Warn("bounce process failed",
+				loggy.Kv("messageId", msg.ID),
+				loggy.Kv("error", err.Error()),
 			)
 		}
 		if err := c.graph.MarkAsRead(ctx, c.mailbox, msg.ID); err != nil {
-			slog.WarnContext(ctx, "mark as read failed",
-				slog.String("messageId", msg.ID),
-				slog.String("error", err.Error()),
+			crawlerLog.Warn("mark as read failed",
+				loggy.Kv("messageId", msg.ID),
+				loggy.Kv("error", err.Error()),
 			)
 		}
 	}
@@ -84,9 +86,7 @@ func (c *Crawler) process(ctx context.Context, msg NDRMessage) error {
 		return fmt.Errorf("publish bounce record: %w", err)
 	}
 
-	slog.InfoContext(ctx, "bounce recorded",
-		slog.String("traceId", traceID),
-	)
+	crawlerLog.Info("bounce recorded", loggy.Kv("traceId", traceID))
 	return nil
 }
 

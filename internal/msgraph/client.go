@@ -12,7 +12,11 @@ import (
 	"time"
 
 	"github.com/sony/gobreaker"
+
+	"dispatch/internal/loggy"
 )
+
+var clientLog = loggy.GetLogger("MSGraphClient")
 
 const baseURL = "https://graph.microsoft.com/v1.0"
 
@@ -124,6 +128,7 @@ func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, int, error)
 func (c *Client) doWithRetry(ctx context.Context, buildReq func() (*http.Request, error)) ([]byte, int, error) {
 	const fallbackDelay = 2 * time.Second
 	const maxDelay = 30 * time.Second
+	clientLog.RecordApiStart("MS_GRAPH")
 	for attempt := range 3 {
 		req, err := buildReq()
 		if err != nil {
@@ -131,13 +136,19 @@ func (c *Client) doWithRetry(ctx context.Context, buildReq func() (*http.Request
 		}
 		body, status, err := c.do(ctx, req)
 		if err == nil {
+			clientLog.ExternalApiSuccess("MS_GRAPH", status)
 			return body, status, nil
 		}
 		var transient *GraphTransientError
 		if !errors.As(err, &transient) {
+			clientLog.ApiClientError("MS_GRAPH", status, err.Error())
 			return nil, status, err
 		}
 		if attempt < 2 {
+			clientLog.Warn("MS Graph transient error, retrying",
+				loggy.Kv("attempt", attempt+1),
+				loggy.Kv("status", status),
+			)
 			wait := fallbackDelay
 			if transient.RetryAfter > wait {
 				wait = transient.RetryAfter
@@ -152,7 +163,9 @@ func (c *Client) doWithRetry(ctx context.Context, buildReq func() (*http.Request
 			}
 		}
 	}
-	return nil, 0, &GraphTransientError{Cause: fmt.Errorf("max retries exceeded")}
+	finalErr := &GraphTransientError{Cause: fmt.Errorf("max retries exceeded")}
+	clientLog.ExternalApiFailure("MS_GRAPH", 0, finalErr)
+	return nil, 0, finalErr
 }
 
 // parseRetryAfter parses the Retry-After header value (integer seconds).

@@ -4,14 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 
 	"github.com/nats-io/nats.go"
 
 	"dispatch/internal/domain"
+	"dispatch/internal/loggy"
 	"dispatch/internal/natsutil"
 	"dispatch/internal/sender"
 )
+
+var resolverLog = loggy.GetLogger("Resolver")
 
 // Resolver holds all dependencies for GraphQL resolvers.
 type Resolver struct {
@@ -152,7 +154,7 @@ func (r *Resolver) ReprocessDeadLetter(ctx context.Context, args struct{ Payload
 	if _, err := r.js.Publish(natsutil.SubjectMails, []byte(args.Payload)); err != nil {
 		return false, fmt.Errorf("reprocess: %w", err)
 	}
-	slog.InfoContext(ctx, "dead letter reprocessed")
+	resolverLog.Info("dead letter reprocessed")
 	return true, nil
 }
 

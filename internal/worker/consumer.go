@@ -3,12 +3,14 @@ package worker
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"github.com/nats-io/nats.go"
 
+	"dispatch/internal/loggy"
 	"dispatch/internal/natsutil"
 )
+
+var consumerLog = loggy.GetLogger("Consumer")
 
 // Consumer pulls messages from NATS JetStream and dispatches them to Processor.
 type Consumer struct {
@@ -31,7 +33,7 @@ func (c *Consumer) Run(ctx context.Context) error {
 	}
 	defer func() { _ = sub.Unsubscribe() }()
 
-	slog.InfoContext(ctx, "mail worker consumer started")
+	consumerLog.Info("mail worker consumer started")
 
 	for {
 		select {
@@ -46,7 +48,7 @@ func (c *Consumer) Run(ctx context.Context) error {
 				return nil
 			}
 			// transient fetch error — log and retry
-			slog.WarnContext(ctx, "fetch error", slog.String("error", err.Error()))
+			consumerLog.Warn("fetch error", loggy.Kv("error", err.Error()))
 			continue
 		}
 

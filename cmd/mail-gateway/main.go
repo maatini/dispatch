@@ -11,56 +11,59 @@ import (
 
 	"dispatch/internal/config"
 	"dispatch/internal/gateway"
+	"dispatch/internal/loggy"
 	"dispatch/internal/natsutil"
 	"dispatch/internal/quota"
 	"dispatch/internal/sender"
 	"dispatch/internal/spam"
 )
 
+var log = loggy.GetLogger("mail-gateway")
+
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
 	cfg, err := config.Load()
 	if err != nil {
-		slog.Error("config load failed", slog.String("error", err.Error()))
+		log.Critical("config load failed", err)
 		os.Exit(1)
 	}
 
 	nc, js, err := natsutil.Connect(cfg.NatsURL)
 	if err != nil {
-		slog.Error("NATS connect failed", slog.String("error", err.Error()))
+		log.Critical("NATS connect failed", err)
 		os.Exit(1)
 	}
 	defer nc.Close()
 
 	spamTTL := time.Duration(cfg.SpamTimeoutSeconds) * time.Second
 	if err := natsutil.ProvisionStreams(js); err != nil {
-		slog.Error("provision streams failed", slog.String("error", err.Error()))
+		log.Critical("provision streams failed", err)
 		os.Exit(1)
 	}
 	if err := natsutil.ProvisionKVBuckets(js, spamTTL); err != nil {
-		slog.Error("provision KV buckets failed", slog.String("error", err.Error()))
+		log.Critical("provision KV buckets failed", err)
 		os.Exit(1)
 	}
 	objStore, err := natsutil.ProvisionObjectStore(js)
 	if err != nil {
-		slog.Error("provision object store failed", slog.String("error", err.Error()))
+		log.Critical("provision object store failed", err)
 		os.Exit(1)
 	}
 
 	sendersKV, err := js.KeyValue(natsutil.BucketSenders)
 	if err != nil {
-		slog.Error("senders KV", slog.String("error", err.Error()))
+		log.Critical("senders KV", err)
 		os.Exit(1)
 	}
 	quotaKV, err := js.KeyValue(natsutil.BucketQuota)
 	if err != nil {
-		slog.Error("quota KV", slog.String("error", err.Error()))
+		log.Critical("quota KV", err)
 		os.Exit(1)
 	}
 	spamKV, err := js.KeyValue(natsutil.BucketSpam)
 	if err != nil {
-		slog.Error("spam KV", slog.String("error", err.Error()))
+		log.Critical("spam KV", err)
 		os.Exit(1)
 	}
 
@@ -83,18 +86,18 @@ func main() {
 	defer stop()
 
 	go func() {
-		slog.Info("mail-gateway started", slog.String("port", cfg.Port))
+		log.Info("mail-gateway started", loggy.Kv("port", cfg.Port))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slog.Error("server error", slog.String("error", err.Error()))
+			log.Critical("server error", err)
 			os.Exit(1)
 		}
 	}()
 
 	<-ctx.Done()
-	slog.Info("shutting down")
+	log.Info("shutting down")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		slog.Error("shutdown error", slog.String("error", err.Error()))
+		log.Critical("shutdown error", err)
 	}
 }

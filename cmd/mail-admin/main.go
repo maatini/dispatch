@@ -11,39 +11,42 @@ import (
 
 	"dispatch/internal/admin"
 	"dispatch/internal/config"
+	"dispatch/internal/loggy"
 	"dispatch/internal/natsutil"
 	"dispatch/internal/sender"
 )
+
+var log = loggy.GetLogger("mail-admin")
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
 	cfg, err := config.Load()
 	if err != nil {
-		slog.Error("config load", slog.String("error", err.Error()))
+		log.Critical("config load", err)
 		os.Exit(1)
 	}
 
 	nc, js, err := natsutil.Connect(cfg.NatsURL)
 	if err != nil {
-		slog.Error("NATS connect", slog.String("error", err.Error()))
+		log.Critical("NATS connect", err)
 		os.Exit(1)
 	}
 	defer nc.Close()
 
 	spamTTL := time.Duration(cfg.SpamTimeoutSeconds) * time.Second
 	if err := natsutil.ProvisionStreams(js); err != nil {
-		slog.Error("provision streams", slog.String("error", err.Error()))
+		log.Critical("provision streams", err)
 		os.Exit(1)
 	}
 	if err := natsutil.ProvisionKVBuckets(js, spamTTL); err != nil {
-		slog.Error("provision KV", slog.String("error", err.Error()))
+		log.Critical("provision KV", err)
 		os.Exit(1)
 	}
 
 	sendersKV, err := js.KeyValue(natsutil.BucketSenders)
 	if err != nil {
-		slog.Error("senders KV", slog.String("error", err.Error()))
+		log.Critical("senders KV", err)
 		os.Exit(1)
 	}
 
@@ -52,7 +55,7 @@ func main() {
 
 	handler, err := admin.NewHTTPHandler(resolver)
 	if err != nil {
-		slog.Error("graphql schema", slog.String("error", err.Error()))
+		log.Critical("graphql schema", err)
 		os.Exit(1)
 	}
 
@@ -74,9 +77,9 @@ func main() {
 	defer stop()
 
 	go func() {
-		slog.Info("mail-admin started", slog.String("port", cfg.Port))
+		log.Info("mail-admin started", loggy.Kv("port", cfg.Port))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slog.Error("server error", slog.String("error", err.Error()))
+			log.Critical("server error", err)
 			os.Exit(1)
 		}
 	}()
