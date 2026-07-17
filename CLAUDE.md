@@ -99,4 +99,17 @@ Mark important design decisions in the log with `**WICHTIG**` or `**DESIGN-DECIS
 - `docs/architecture.md` – full 7-stage pipeline, error table, resilience details
 - `docs/coding-idioms.md` – extended logging, error and interface examples
 
-**Last updated:** 2026-05-01 | Version: 2.0 (shortened + modular + ai-changes log)
+**Last updated:** 2026-07-17 | Version: 2.1 (added knowledge base pointer)
+
+## 10. Knowledge Base
+
+For architecture, responsibilities, and dependencies consult `docs/knowledge-base/` first.
+Always start with the relevant `index.md` file for the module you're working on.
+
+Key starting points:
+- `docs/knowledge-base/overview.md` — project purpose and tech stack
+- `docs/knowledge-base/architecture/dependencies.md` — who depends on what (Mermaid graph)
+- `docs/knowledge-base/architecture/data-flows.md` — sequence diagrams for send mail + bounce detection
+- `docs/knowledge-base/modules/<module>/responsibility.md` — what each module owns
+- `docs/knowledge-base/modules/<module>/gotchas.md` — pitfalls and edge cases
+- `docs/knowledge-base/cross-cutting/tags.md` — registry of @tag:xxx used throughout the codebase
