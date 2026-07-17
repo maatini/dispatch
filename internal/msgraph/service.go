@@ -20,10 +20,11 @@ const (
 type Service struct {
 	client      *Client
 	rateLimiter *RateLimiter
+	baseURL     string // empty → package-level production URL
 }
 
 func NewService(client *Client, rateLimiter *RateLimiter) *Service {
-	return &Service{client: client, rateLimiter: rateLimiter}
+	return &Service{client: client, rateLimiter: rateLimiter, baseURL: baseURL}
 }
 
 func (s *Service) SendEmail(ctx context.Context, req domain.MailRequestDO) error {
@@ -49,7 +50,7 @@ func (s *Service) sendInline(ctx context.Context, req domain.MailRequestDO) erro
 		return fmt.Errorf("marshal sendMail: %w", err)
 	}
 
-	sendURL := fmt.Sprintf("%s/users/%s/sendMail", baseURL, req.Sender)
+	sendURL := fmt.Sprintf("%s/users/%s/sendMail", s.baseURL, req.Sender)
 	_, _, err = s.client.doWithRetry(ctx, func() (*http.Request, error) {
 		return http.NewRequestWithContext(ctx, http.MethodPost, sendURL, bytes.NewReader(data))
 	})
@@ -63,7 +64,7 @@ func (s *Service) sendViaUploadSession(ctx context.Context, req domain.MailReque
 	}
 
 	cleanup := func() {
-		delURL := fmt.Sprintf("%s/users/%s/messages/%s", baseURL, req.Sender, draftID)
+		delURL := fmt.Sprintf("%s/users/%s/messages/%s", s.baseURL, req.Sender, draftID)
 		r, _ := http.NewRequestWithContext(context.Background(), http.MethodDelete, delURL, nil)
 		_, _, _ = s.client.do(context.Background(), r)
 	}
@@ -81,7 +82,7 @@ func (s *Service) sendViaUploadSession(ctx context.Context, req domain.MailReque
 		}
 	}
 
-	sendURL := fmt.Sprintf("%s/users/%s/messages/%s/send", baseURL, req.Sender, draftID)
+	sendURL := fmt.Sprintf("%s/users/%s/messages/%s/send", s.baseURL, req.Sender, draftID)
 	_, _, err = s.client.doWithRetry(ctx, func() (*http.Request, error) {
 		return http.NewRequestWithContext(ctx, http.MethodPost, sendURL, http.NoBody)
 	})
@@ -98,7 +99,7 @@ func (s *Service) createDraft(ctx context.Context, req domain.MailRequestDO) (st
 		return "", fmt.Errorf("marshal draft: %w", err)
 	}
 
-	draftURL := fmt.Sprintf("%s/users/%s/messages", baseURL, req.Sender)
+	draftURL := fmt.Sprintf("%s/users/%s/messages", s.baseURL, req.Sender)
 	body, _, err := s.client.doWithRetry(ctx, func() (*http.Request, error) {
 		return http.NewRequestWithContext(ctx, http.MethodPost, draftURL, bytes.NewReader(data))
 	})
@@ -127,7 +128,7 @@ func (s *Service) addSmallAttachment(ctx context.Context, sender, draftID string
 		return fmt.Errorf("marshal small attachment: %w", err)
 	}
 
-	attURL := fmt.Sprintf("%s/users/%s/messages/%s/attachments", baseURL, sender, draftID)
+	attURL := fmt.Sprintf("%s/users/%s/messages/%s/attachments", s.baseURL, sender, draftID)
 	_, _, err = s.client.doWithRetry(ctx, func() (*http.Request, error) {
 		return http.NewRequestWithContext(ctx, http.MethodPost, attURL, bytes.NewReader(data))
 	})
@@ -147,7 +148,7 @@ func (s *Service) uploadLargeAttachment(ctx context.Context, sender, draftID str
 		return fmt.Errorf("marshal upload session: %w", err)
 	}
 
-	sessionURL := fmt.Sprintf("%s/users/%s/messages/%s/attachments/createUploadSession", baseURL, sender, draftID)
+	sessionURL := fmt.Sprintf("%s/users/%s/messages/%s/attachments/createUploadSession", s.baseURL, sender, draftID)
 	body, _, err := s.client.doWithRetry(ctx, func() (*http.Request, error) {
 		return http.NewRequestWithContext(ctx, http.MethodPost, sessionURL, bytes.NewReader(sessionData))
 	})
@@ -186,11 +187,14 @@ func (s *Service) uploadChunks(ctx context.Context, uploadURL string, content []
 		if err != nil {
 			return &GraphTransientError{Cause: err}
 		}
-		_, _ = io.Copy(io.Discard, resp.Body)
+		body, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
 
 		if resp.StatusCode >= 400 {
-			return &GraphTransientError{StatusCode: resp.StatusCode}
+			if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+				return &GraphTransientError{StatusCode: resp.StatusCode}
+			}
+			return &GraphPermanentError{StatusCode: resp.StatusCode, Body: string(body)}
 		}
 	}
 	return nil

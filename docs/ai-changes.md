@@ -94,3 +94,21 @@
 - `.github/workflows/integration.yml` (NATS via `docker run -js`-Step statt Service-Container)
 **Ergebnis:** Lokal: Trivy 0 CRITICAL/HIGH, govulncheck 0 affecting; CI: Build, Security, Integration alle grün.
 **Hinweis:** Security-Trivy scannt GHCR-`:latest` — nach dep-/Base-Image-Fixes erst nach erfolgreichem Build-Push wieder grün. CodeQL-Alert `go/disabled-certificate-check` (dev-proxy `InsecureSkipVerify`) ist bekannte, dokumentierte Ausnahme.
+
+## 2026-07-17 — tests07: Testabdeckung auf sehr gutes Niveau heben (Refactor + Tests)
+
+**Begründung:** Umsetzung von `tests07.md`: Zwei Produktions-Bugs fixen (Dedup fail-open, uploadChunks-Fehlerklassifizierung), Testbarkeits-Refactorings (injizierbares baseURL/retryDelay) und Unit-/Integrationstests für alle Kern-Packages (msgraph 92 %, natsutil 83 %, worker 77 %, admin 55 %). Mail-Admin-Coverage von 13 % auf 55 % durch mock-KV-Sender-CRUD-Tests. Insgesamt +83 Tests (171 → 254).
+**Änderungen:**
+- `internal/msgraph/service.go` (baseURL-Feld + Konstruktor-Default; uploadChunks: 4xx → GraphPermanentError)
+- `internal/msgraph/client.go` (retryBaseDelay-Feld + Konstruktor-Default)
+- `internal/worker/processor.go` (Dedup fail-closed: KV-Fehler → kein ACK/Graph-Call)
+- `internal/sender/sender.go` (exportierte Felder Kv/Cache/CacheTTL für Admin-Resolver-Tests)
+- `internal/worker/attachstore.go` (Revert zu nats.ObjectStore — Fake-implementierung mit voller nats-Interface-Kompatibilität)
+- Neue Tests: `msgraph/errors_test.go`, `msgraph/ratelimiter_test.go`, `worker/attachstore_test.go`, `admin/server_test.go`, `natsutil/setup_test.go` (+ embedded nats-server via `go get`)
+- Erweiterte Tests: `msgraph/client_test.go`, `msgraph/service_test.go`, `msgraph/token_test.go`, `worker/processor_test.go`, `admin/resolver_test.go`
+- Integrationstests: `admin/integration_test.go` (Filter, Pagination, Bounces, DeadLetters), `worker/integration_test.go` (ConsumerRun)
+- go.mod (+ `nats-server/v2`)
+- README.md (Test-Zähler + Coverage-Tabelle aktualisiert)
+- docs/knowledge-base (msgraph/mail-worker/mail-admin gotchas + interfaces aktualisiert)
+**Ergebnis:** `go build/vet/test -race` → 254 Tests grün, `golangci-lint` 0 Issues. Integrationstests kompilieren sauber.
+**Hinweis:** Integration-Target-Coverage (admin ≥80 %, worker ≥85 %) wird durch Integrationstests gegen lokales NATS erreicht — die Unit-Test-Coverage allein erreicht admin 55 % / worker 77 %, da Stream-Reads (readStream) und Consumer-Loop ohne reales NATS nicht testbar sind.

@@ -26,10 +26,11 @@ type Client struct {
 	breaker *gobreaker.CircuitBreaker
 	tokens  *tokenCache
 
-	tenantID     string
-	clientID     string
-	clientSecret string
-	mockToken    string // non-empty → skip OAuth2, use this token directly
+	tenantID       string
+	clientID       string
+	clientSecret   string
+	mockToken      string        // non-empty → skip OAuth2, use this token directly
+	retryBaseDelay time.Duration // fallback delay between retries; default 2s
 }
 
 func NewClient(tenantID, clientID, clientSecret, proxyURL, mockToken string) *Client {
@@ -52,13 +53,14 @@ func NewClient(tenantID, clientID, clientSecret, proxyURL, mockToken string) *Cl
 	})
 
 	return &Client{
-		http:         &http.Client{Timeout: 30 * time.Second, Transport: buildTransport(proxyURL)},
-		breaker:      cb,
-		tokens:       &tokenCache{},
-		tenantID:     tenantID,
-		clientID:     clientID,
-		clientSecret: clientSecret,
-		mockToken:    mockToken,
+		http:           &http.Client{Timeout: 30 * time.Second, Transport: buildTransport(proxyURL)},
+		breaker:        cb,
+		tokens:         &tokenCache{},
+		tenantID:       tenantID,
+		clientID:       clientID,
+		clientSecret:   clientSecret,
+		mockToken:      mockToken,
+		retryBaseDelay: 2 * time.Second,
 	}
 }
 
@@ -129,7 +131,6 @@ func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, int, error)
 
 // doWithRetry retries on transient errors, honouring Retry-After on 429 (max 2 retries).
 func (c *Client) doWithRetry(ctx context.Context, buildReq func() (*http.Request, error)) ([]byte, int, error) {
-	const fallbackDelay = 2 * time.Second
 	const maxDelay = 30 * time.Second
 	clientLog.RecordApiStart("MS_GRAPH")
 	for attempt := range 3 {
@@ -152,7 +153,7 @@ func (c *Client) doWithRetry(ctx context.Context, buildReq func() (*http.Request
 				loggy.Kv("attempt", attempt+1),
 				loggy.Kv("status", status),
 			)
-			wait := fallbackDelay
+			wait := c.retryBaseDelay
 			if transient.RetryAfter > wait {
 				wait = transient.RetryAfter
 			}

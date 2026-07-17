@@ -25,12 +25,17 @@ type stubGraph struct{ err error }
 func (s *stubGraph) SendEmail(_ context.Context, _ domain.MailRequestDO) error { return s.err }
 
 type stubKV struct {
-	data map[string][]byte
+	data   map[string][]byte
+	getErr error
+	putErr error
 }
 
 func newStubKV() *stubKV { return &stubKV{data: make(map[string][]byte)} }
 
 func (s *stubKV) Get(key string) (nats.KeyValueEntry, error) {
+	if s.getErr != nil {
+		return nil, s.getErr
+	}
 	v, ok := s.data[key]
 	if !ok {
 		return nil, nats.ErrKeyNotFound
@@ -39,6 +44,9 @@ func (s *stubKV) Get(key string) (nats.KeyValueEntry, error) {
 }
 
 func (s *stubKV) Put(key string, value []byte) (uint64, error) {
+	if s.putErr != nil {
+		return 0, s.putErr
+	}
 	s.data[key] = value
 	return 1, nil
 }
@@ -368,5 +376,85 @@ func TestHandle_TestMode_AttachmentCleanup(t *testing.T) {
 
 	if !att.cleanedUp {
 		t.Error("attachment cleanup must be called after test-mode delivery")
+	}
+}
+
+func TestHandle_DedupGetError_NotKeyNotFound_FailClosed(t *testing.T) {
+	js := &captureJS{}
+	kv := newStubKV()
+	kv.getErr = errors.New("KV connection lost")
+
+	graphCalled := false
+	proc := &Processor{
+		graph:     &callCheckGraph{onCall: func() { graphCalled = true }},
+		delivered: kv,
+		js:        js,
+	}
+
+	req := domain.MailRequestDO{TraceID: "trace-failclosed", AppTag: "app", Sender: testSender, Recipients: []string{testRecipient}}
+	proc.Handle(context.Background(), buildMsg(req))
+
+	if graphCalled {
+		t.Error("dedup KV error (not ErrKeyNotFound) must be fail-closed: no Graph call")
+	}
+	if len(js.records) != 0 {
+		t.Error("dedup KV error (not ErrKeyNotFound) must not write audit")
+	}
+}
+
+func TestHandle_DedupPutError_ContinuesProcessing(t *testing.T) {
+	js := &captureJS{}
+	kv := newStubKV()
+	kv.putErr = errors.New("KV full")
+
+	proc := &Processor{
+		graph:     &stubGraph{},
+		delivered: kv,
+		js:        js,
+	}
+
+	req := domain.MailRequestDO{TraceID: "trace-putfail", AppTag: "app", Sender: testSender, Recipients: []string{testRecipient}}
+	proc.Handle(context.Background(), buildMsg(req))
+
+	if len(js.records) == 0 {
+		t.Fatal("audit must be written even when delivered.Put fails")
+	}
+	var audit domain.AuditRecord
+	_ = json.Unmarshal(js.records[0], &audit)
+	if audit.Status != domain.StatusDelivered {
+		t.Errorf("expected DELIVERED audit, got %s", audit.Status)
+	}
+}
+
+func TestHandle_WriteAuditMarshalError_DoesNotPanic(t *testing.T) {
+	// writeAudit marshals domain.AuditRecord; a nil recipient list should be fine
+	js := &captureJS{}
+	kv := newStubKV()
+	proc := &Processor{graph: &stubGraph{}, delivered: kv, js: js}
+
+	req := domain.MailRequestDO{TraceID: "trace-audit-marshal", AppTag: "app", Sender: testSender, Recipients: nil}
+	proc.Handle(context.Background(), buildMsg(req))
+
+	if len(js.records) == 0 {
+		t.Fatal("audit must be published")
+	}
+}
+
+func TestHandle_TestMode_DeliveredPutError(t *testing.T) {
+	js := &captureJS{}
+	kv := newStubKV()
+	kv.putErr = errors.New("KV down")
+	proc := &Processor{graph: &stubGraph{}, delivered: kv, js: js}
+
+	req := domain.MailRequestDO{TraceID: "trace-test-put", Test: true, AppTag: "app", Sender: testSender, Recipients: []string{testRecipient}}
+	proc.Handle(context.Background(), buildMsg(req))
+
+	if len(js.records) == 0 {
+		t.Fatal("TEST_SUCCESS audit must be written even when KV put fails")
+	}
+	var audit domain.AuditRecord
+	_ = json.Unmarshal(js.records[0], &audit)
+	if audit.Status != domain.StatusTestSuccess {
+		t.Errorf("expected TEST_SUCCESS, got %s", audit.Status)
 	}
 }

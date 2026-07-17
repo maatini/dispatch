@@ -13,6 +13,8 @@ All stream queries (`mails`, `bounces`, `deadLetters`) create temporary subscrip
 - **No consumer tracking**: No durable consumer offsets — each query reads everything
 - **Termination**: `readStream` waits up to 5s per `NextMsg`, counts every consumed message (even ones that fail to unmarshal) against `StreamInfo.State.Msgs`, and honors request-context cancellation. Corrupt records are skipped, not fatal.
 
+**Note:** The admin resolver is tested via unit tests for all pure-function code paths (`matchesMailFilter`, `pageSize`, `paginate`, mapper functions at 100%) and via integration tests for the NATS-dependent stream-read paths (`Mails`, `Bounces`, `DeadLetters`). The `sender.Store` fields (`Kv`, `Cache`, `CacheTTL`) are exported to allow mock-KV-based CRUD tests without real NATS.
+
 ## ReprocessDeadLetter Restores Headers From the Payload
 
 The `reprocessDeadLetter` mutation parses the payload as `MailRequestDO` and republishes it with `traceId`/`appTag` headers (mirroring the gateway publisher), so the worker's dedup keeps working for reprocessed messages. Rules:

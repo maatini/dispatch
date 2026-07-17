@@ -12,13 +12,14 @@ Mixing these up would cause either:
 
 The distinction is enforced via `errors.As(err, &transient)` in `processor.processSend()`.
 
-## Dedup Check Comes Before Any External Call
+## Dedup Is Fail-Closed
 
-The `delivered` KV check runs before the MS Graph send and before the attachment fetch. If a worker crashes after sending but before ACKing, the redelivered message will find the traceID in `delivered` KV and skip. This guarantees zero double-delivery.
+The `delivered.Get(traceID)` check has strict error semantics:
+- **Key found** → duplicate, ACK and skip (idempotent delivery guarantee)
+- **`nats.ErrKeyNotFound`** → key not found, proceed with send
+- **Any other error** (KV unreachable, timeout) → **no ACK, no Graph call** — JetStream redelivers
 
-**TraceID source:** the dedup key is `req.TraceID` from the payload, with the `traceId` NATS header only as fallback. If both are empty, the message goes to the dead-letter stream (reason `missing traceId`) and is ACKed — there is no shared `"unknown"` dedup key, so headerless messages can never collide.
-
-**Important:** The `delivered` KV write happens AFTER MS Graph success. If the write fails, it's logged but the ACK still happens — the 7-day TTL means the next delivery attempt for the same traceID would be skipped anyway.
+This is fail-closed: if the KV store is unavailable, the message is not processed until the KV comes back. This prevents double-delivery during KV outages, at the cost of delayed delivery. The previous fail-open behavior (treating any error as "not delivered") risked duplicate sends.
 
 ## Attachment Fetch Failure → No ACK
 

@@ -40,6 +40,10 @@ When `sendViaUploadSession` fails during attachment upload, the `cleanup()` func
 
 `uploadChunks()` iterates over the content in 1.25 MB chunks (`chunkSize = 4 * 327_680`). Each chunk is PUT with a `Content-Range` header like `bytes 0-1310719/5242880`. If any chunk fails, the entire upload fails with a `GraphTransientError`.
 
-## Upload Chunk Errors Are Transient
+## Upload Chunk Errors Distinguished: 429/5xx Transient, Other 4xx Permanent
 
-All upload chunk errors (HTTP ≥ 400 or network errors) are wrapped as `GraphTransientError`. This means a chunk failure during a large attachment upload will cause the worker to not ACK, and the entire send will be retried from scratch.
+`uploadChunks()` classifies upload chunk HTTP errors:
+- **429 or ≥500** → `GraphTransientError` (worker does NOT ack, JetStream redelivers)
+- **Other 4xx** (e.g. 400 expired upload URL) → `GraphPermanentError` (worker ACKs and writes FAILED)
+
+This prevents infinite redelivery on permanent chunk errors like expired upload URLs.

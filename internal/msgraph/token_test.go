@@ -186,3 +186,33 @@ func TestTokenCache_ExpiryBuffer(t *testing.T) {
 		t.Error("expected different tokens on each call when expiry buffer exceeds expiresIn")
 	}
 }
+
+func TestFetchToken_NetworkError_IsTransient(t *testing.T) {
+	// Use a server that we close before the request to simulate network error
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	srv.Close() // close immediately — request will fail
+
+	_, _, err := fetchToken(context.Background(), srv.URL, "cid", "csecret")
+	if err == nil {
+		t.Fatal("expected network error")
+	}
+	var transient *GraphTransientError
+	if !errors.As(err, &transient) {
+		t.Errorf("want GraphTransientError for network error, got %T: %v", err, err)
+	}
+}
+
+func TestTokenCache_RefreshErrorPropagates(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	tc := &tokenCache{tokenEndpointBase: srv.URL}
+	_, err := tc.get(context.Background(), "tenant", "cid", "csecret")
+	if err == nil {
+		t.Fatal("expected refresh error to propagate")
+	}
+}

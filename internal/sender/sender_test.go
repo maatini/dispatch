@@ -77,7 +77,7 @@ func (e *mockEntry) Created() time.Time         { return time.Time{} }
 func (e *mockEntry) Operation() nats.KeyValueOp { return nats.KeyValuePut }
 
 func newStore(kv *mockKV, ttl time.Duration) *Store {
-	return &Store{kv: kv, cache: make(map[string]cacheEntry), cacheTTL: ttl}
+	return &Store{Kv: kv, Cache: make(map[string]CacheEntry), CacheTTL: ttl}
 }
 
 func mustMarshal(s domain.Sender) []byte {

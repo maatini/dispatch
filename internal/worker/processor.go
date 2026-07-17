@@ -71,11 +71,17 @@ func (p *Processor) Handle(ctx context.Context, msg *nats.Msg) {
 	}
 	log := procLog.With(loggy.Kv("traceId", traceID))
 
-	// idempotent dedup
-	if _, err := p.delivered.Get(traceID); err == nil {
+	// idempotent dedup — fail-closed: ErrKeyNotFound = nicht zugestellt (weiter verarbeiten),
+	// jeder andere Fehler = transient (return ohne Ack → JetStream-Redelivery)
+	_, kvErr := p.delivered.Get(traceID)
+	if kvErr == nil {
 		log.Info("duplicate delivery detected, acking and skipping")
 		_ = msg.Ack()
 		return
+	}
+	if !errors.Is(kvErr, nats.ErrKeyNotFound) {
+		log.Warn("delivered KV lookup failed, not acking", loggy.Kv("error", kvErr.Error()))
+		return // no ack → JetStream redelivers
 	}
 
 	// fetch attachment bytes from Object Store before sending

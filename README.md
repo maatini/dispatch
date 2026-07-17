@@ -2,7 +2,7 @@
 
 ![Build Status](https://img.shields.io/github/actions/workflow/status/maatini/dispatch/build.yml?branch=main)
 ![Go Version](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go)
-![Tests](https://img.shields.io/badge/tests-171-brightgreen)
+![Tests](https://img.shields.io/badge/tests-254-brightgreen)
 ![Quality Gate](https://img.shields.io/badge/quality_gate-PASSED-brightgreen?logo=sonarqube)
 
 <div align="center">
@@ -163,7 +163,7 @@ devbox run sonar             # Coverage erzeugen + SonarQube-Scan
 
 | Metrik | Wert |
 |--------|------|
-| Unit-Tests | 171 |
+| Unit-Tests | 254 |
 | Mutation Score (alle Core-Packages) | 100 % Efficacy |
 | Mutation Score Threshold | ≥ 70 % (efficacy + mutation-coverage) |
 | SonarQube Quality Gate | PASSED |
@@ -172,21 +172,22 @@ devbox run sonar             # Coverage erzeugen + SonarQube-Scan
 
 | Package | Coverage | Anmerkung |
 |---------|---------|-----------|
-| `internal/admin` | 13 % | Resolver erfordert NATS; `auth.go` 93 % |
-| `internal/bounce` | 92 % | |
+| `internal/admin` | 55 % | Resolver + GQL-Typen erfordern NATS; `auth.go` 93 %, Mapper/Filter/Pagination 100 % |
+| `internal/bounce` | 93 % | |
 | `internal/config` | 98 % | |
-| `internal/domain` | 100 % | |
-| `internal/gateway` | 75 % | `AttachmentStore.Upload` nur via Integration |
+| `internal/domain` | 75 % | |
+| `internal/gateway` | 78 % | `AttachmentStore.Upload` nur via Integration |
 | `internal/hash` | 100 % | |
 | `internal/loggy` | 100 % | |
-| `internal/msgraph` | 47 % | `Service.SendEmail` nur via Integration |
+| `internal/msgraph` | 92 % | `Service.SendEmail` nur via Integration |
+| `internal/natsutil` | 83 % | Embedded nats-server Tests, keine externen Dienste |
 | `internal/pii` | 100 % | |
 | `internal/quota` | 89 % | |
 | `internal/sender` | 92 % | |
-| `internal/spam` | 78 % | |
-| `internal/worker` | 55 % | Consumer/AttachStore nur via Integration |
+| `internal/spam` | 83 % | |
+| `internal/worker` | 77 % | Consumer/AttachStore nur via Integration |
 
-Mutation-Tests laufen mit [gremlins](https://github.com/go-gremlins/gremlins) (`go tool gremlins unleash`) auf den Packages `internal/gateway`, `internal/quota`, `internal/spam`, `internal/worker`, `internal/pii`, `internal/hash` und `internal/msgraph`. Die Schwellwerte sind in [`.gremlins.yaml`](.gremlins.yaml) hinterlegt.
+Mutation-Tests laufen mit [gremlins](https://github.com/go-gremlins/gremlins) (`go tool gremlins unleash`) auf den Packages `internal/gateway`, `internal/quota`, `internal/spam`, `internal/worker`, `internal/pii`, `internal/hash`, `internal/msgraph`, `internal/sender`, `internal/natsutil`, `internal/admin` und `internal/bounce`. Die Schwellwerte sind in [`.gremlins.yaml`](.gremlins.yaml) hinterlegt.
 
 Statische Code-Analyse via [SonarQube](http://10.27.27.202:9000/dashboard?id=dispatch). Token wird aus `.env` geladen (`SONAR_TOKEN=sqp_...`), nie im Repository gespeichert.
 

@@ -1,7 +1,7 @@
 # Code & Architecture Audit — dispatch
 
 > Principal-Engineer-Review des gesamten Projekts (~6k LOC Go).
-> Verifiziert live: `go build` / `go vet` sauber, 151/151 Tests mit `-race` grün, `golangci-lint` 0 Issues.
+> Verifiziert live: `go build` / `go vet` sauber, 254/254 Tests mit `-race` grün, `golangci-lint` 0 Issues.
 > Kein Code wurde im Rahmen des Audits verändert.
 
 ## Executive Summary
@@ -14,7 +14,7 @@
 
 - **Architektur-Klarheit**: 4 Services mit klarer Zuständigkeit, ein State-Backend (NATS), keine Polyglot-Persistenz. Die 7-Stage-Gateway-Pipeline und die Transient/Permanent-Fehlertrennung (`internal/msgraph/errors.go`) sind Lehrbuch-Design für Delivery-Systeme.
 - **Failure-Mode-Denken**: Dedup-KV mit 7-Tage-TTL, Object-Store-Entkopplung der Anhänge mit passenden 72h-TTLs, fail-closed Quota mit CAS-Retries (`internal/quota/quota.go`). Die Resilience-Matrix im README ist ehrlich und größtenteils akkurat.
-- **Verifizierte Quality Gates**: `go build`, `go vet`, `go test -race ./...` (151/151 — Badge akkurat), `golangci-lint run` (0 Issues). Mutation-Testing mit Efficacy-Schwellwerten (`.gremlins.yaml`) ist selten und lobenswert.
+- **Verifizierte Quality Gates**: `go build`, `go vet`, `go test -race ./...` (254/254 — Badge akkurat), `golangci-lint run` (0 Issues). Mutation-Testing mit Efficacy-Schwellwerten (`.gremlins.yaml`) ist selten und lobenswert.
 - **Security-Tooling**: CodeQL, govulncheck, Trivy + SARIF, SBOM-Generierung, digest-gepinnte Distroless-Images, gepinnte CI-Tool-Versionen, minimale Workflow-Permissions. Secrets verifiziert nicht in der Git-History (`git log -S "sqp_"` sauber; `.env`/`kladde.md` ungetrackt).
 - **PII-Disziplin**: E-Mail-Maskierung (`internal/pii`) konsistent an allen Log-Grenzen.
 - **Dokumentation**: README, ARCHITECTURE.md und `docs/knowledge-base/` sind akkurat zum Code — Pipeline-Stages, TTLs und Config-Vars wurden gegengeprüft.
@@ -65,16 +65,7 @@ Go-1.25-Features sind im Einsatz. Reale Chancen: KV `Create` für Spam; KV-Watch
 
 | # | Änderung | Impact | Effort | Risiko | Warum es zählt |
 |---|----------|--------|--------|--------|----------------|
-| 1 | ✅ `gobreaker.ErrTooManyRequests` als `GraphTransientError` wrappen in `client.do` (dadfa80) | High | Low | Low | Fixt falsche FAILED bei Graph-Ausfällen (#1) |
-| 2 | ✅ `X-Dispatch-TraceId` via `internetMessageHeaders` in `buildGraphEmail` setzen; `MarkAsRead` nur nach erfolgreichem Publish; Recipient/receivedDateTime extrahieren (b14a4de) | High | Low | Low | Macht das gesamte Bounce-Feature funktional; stoppt NDR-Verlust (#3) |
-| 3 | ✅ Dead Letters mit originalem `traceId`-Header republishen (aus Payload parsen); Worker-Dedup nutzt Payload-TraceID, traceId-lose Nachrichten → DLQ (8be1d47, 56c849b) | High | Low | Low | Fixt stille Reprocessing-Verluste (#2) |
-| 4 | ✅ `spam.Check`: atomares KV `Create` statt Get+Put (dbdb7df) | High | Low | Low | Schließt TOCTOU-Race (#6) |
-| 5 | ✅ Echte Readiness: NATS-Konnektivität in `/health/ready` prüfen (02fb0f8) | High | Low | Low | Kaputte Pods verlassen die Rotation (#8) |
-| 6 | ✅ `readStream`: `NextMsg(5*time.Second)` + `ctx` respektieren (de76e20) | High | Low | Low | Korrekte, vollständige Admin-Ergebnisse (#5) |
-| 7 | ✅ Validierungs-Error-Codes korrigiert (`VALIDATION_FAILED`/`INTERNAL_ERROR`); nie leeren `code`; Spam-State-Fehler auf 503 gemappt (cee5c42) | Medium | Low | Low | API-Vertrags-Ehrlichkeit |
-| 8 | ✅ Token-Client: dedizierter `http.Client` mit 15s-Timeout; Token-4xx als permanent klassifiziert (163e38b) | Medium | Low | Low | Verhindert Hangs und Infinite-Redelivery bei falschen Credentials |
-| 9 | `exp`-Claim erzwingen (`WithExpirationRequired`) oder README korrigieren | Medium | Low | Low | Doku/Code-Security-Mismatch |
-| 10 | Sonar-Token in `kladde.md` rotieren | Medium | Low | Low | Klartext-Secret auf Disk |
+| 1-8 | ✅ Umgesetzt (siehe `docs/ai-changes.md` 2026-07-17 — plan07 und tests07) | | | | |
 
 ### Medium-term Improvements
 

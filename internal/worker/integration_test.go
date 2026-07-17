@@ -175,3 +175,72 @@ func TestIntegration_TransientError_Redelivers(t *testing.T) {
 		t.Error("transient error must not write audit or dead-letter records")
 	}
 }
+
+func TestIntegration_ConsumerRunWithTransientHandler(t *testing.T) {
+	js := integrationNATS(t)
+
+	stream := "TEST_CONSUMER_RUN"
+	subject := "test.consumer.run"
+	if _, err := js.AddStream(&nats.StreamConfig{
+		Name:      stream,
+		Subjects:  []string{subject},
+		Storage:   nats.MemoryStorage,
+		Retention: nats.WorkQueuePolicy,
+	}); err != nil {
+		t.Fatalf("add stream: %v", err)
+	}
+	t.Cleanup(func() { _ = js.DeleteStream(stream) })
+	if _, err := js.AddConsumer(stream, &nats.ConsumerConfig{
+		Durable:       "test-consumer-run",
+		AckPolicy:     nats.AckExplicitPolicy,
+		AckWait:       1 * time.Second,
+		FilterSubject: subject,
+	}); err != nil {
+		t.Fatalf("add consumer: %v", err)
+	}
+
+	deliveredKV, err := js.KeyValue(natsutil.BucketDelivered)
+	if err != nil {
+		t.Fatalf("delivered KV: %v", err)
+	}
+	rec := &recordingPublisher{js: js}
+	proc := NewProcessor(&transientGraphStub{}, deliveredKV, rec, nil)
+
+	traceID := uuid.NewString()
+	payload, err := json.Marshal(domain.MailRequestDO{
+		TraceID:    traceID,
+		AppTag:     "consumer-test",
+		Sender:     "s@example.com",
+		Recipients: []string{"r@example.com"},
+		Subject:    "consumer run test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := js.Publish(subject, payload); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	sub, err := js.PullSubscribe(subject, "test-consumer-run", nats.Bind(stream, "test-consumer-run"))
+	if err != nil {
+		t.Fatalf("pull subscribe: %v", err)
+	}
+	defer func() { _ = sub.Unsubscribe() }()
+
+	// Fetch once — should get the one message published
+	msgs, err := sub.Fetch(1, nats.MaxWait(3*time.Second))
+	if err != nil || len(msgs) != 1 {
+		t.Fatalf("fetch: %v (got %d msgs)", err, len(msgs))
+	}
+	proc.Handle(ctx, msgs[0])
+
+	// Message should redeliver since handler doesn't ack
+	msgs2, err := sub.Fetch(1, nats.MaxWait(5*time.Second))
+	if err != nil || len(msgs2) != 1 {
+		t.Fatalf("second fetch (redelivery): %v (got %d msgs)", err, len(msgs2))
+	}
+	_ = msgs2[0].Ack()
+}

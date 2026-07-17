@@ -9,6 +9,7 @@ func NewClient(tenantID, clientID, clientSecret, proxyURL, mockToken string) *Cl
 - If `mockToken != ""`, OAuth2 is skipped; token is used directly
 - If `proxyURL != ""`, all requests are routed through the proxy with TLS verification disabled
 - Circuit breaker: 5 consecutive failures → open, 30s timeout
+- `Client.retryBaseDelay` configures the fallback delay between retries (default 2s; overridable in tests)
 
 ## Service.SendEmail
 
@@ -21,6 +22,8 @@ func (s *Service) SendEmail(ctx context.Context, req domain.MailRequestDO) error
 - Total attachment size < 3 MB → `sendInline()`: single `POST /users/{sender}/sendMail`
 - Total attachment size ≥ 3 MB → `sendViaUploadSession()`: create draft → upload attachments → send draft
 - Returns `GraphTransientError` or `GraphPermanentError` on failure
+
+**Testability:** `Service.baseURL` can be overridden for `httptest.Server` targets (analogous to `BounceService.baseURL`). The constructor `NewService` defaults to the production Graph API URL. All HTTP operations (`sendInline`, `createDraft`, `addSmallAttachment`, `uploadLargeAttachment`) use `s.baseURL` instead of the package-level constant.
 
 ## BounceService
 
