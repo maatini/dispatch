@@ -16,7 +16,7 @@ var validate = validator.New()
 func validateRequest(req *domain.MailRequest, maxBodySize int64, mimeWhitelist []string, maxAttachMB int) error {
 	if err := validate.Struct(req); err != nil {
 		return &domain.ValidationError{
-			Code:    domain.ErrUnknownAppTag,
+			Code:    domain.ErrValidationFailed,
 			Message: fmt.Sprintf("request validation failed: %v", err),
 		}
 	}

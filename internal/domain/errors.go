@@ -17,6 +17,8 @@ const (
 	ErrJSONParseError         ErrorCode = "JSON_PARSE_ERROR"
 	ErrNatsUnavailable        ErrorCode = "NATS_UNAVAILABLE"
 	ErrMessageTooLarge        ErrorCode = "MESSAGE_TOO_LARGE"
+	ErrValidationFailed       ErrorCode = "VALIDATION_FAILED"
+	ErrInternal               ErrorCode = "INTERNAL_ERROR"
 )
 
 type ApiError struct {
@@ -54,6 +56,16 @@ func (e *QuotaStateError) Error() string {
 }
 
 func (e *QuotaStateError) Unwrap() error { return e.Cause }
+
+type SpamStateError struct {
+	Cause error
+}
+
+func (e *SpamStateError) Error() string {
+	return fmt.Sprintf("spam state unavailable: %v", e.Cause)
+}
+
+func (e *SpamStateError) Unwrap() error { return e.Cause }
 
 type NatsPublishError struct {
 	Cause error

@@ -129,6 +129,61 @@ func TestHandleSend_UnknownAppTag(t *testing.T) {
 	}
 }
 
+func TestHandleSend_InvalidRecipient_CodeIsValidationFailed(t *testing.T) {
+	h := buildHandler(
+		&stubSenders{sender: defaultSender()},
+		&stubQuota{}, &stubSpam{}, &stubPublisher{},
+	)
+	body := map[string]any{"appTag": "test", "recipients": []string{"notanemail"}}
+	rr := sendRequest(t, h, body)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf(want400Fmt, rr.Code)
+	}
+	var apiErr domain.ApiError
+	if err := json.Unmarshal(rr.Body.Bytes(), &apiErr); err != nil {
+		t.Fatal(err)
+	}
+	if apiErr.Code != domain.ErrValidationFailed {
+		t.Errorf("code: want VALIDATION_FAILED, got %q", apiErr.Code)
+	}
+}
+
+func TestHandleSend_SpamStateError_Returns503(t *testing.T) {
+	h := buildHandler(
+		&stubSenders{sender: defaultSender()},
+		&stubQuota{},
+		&stubSpam{err: &domain.SpamStateError{Cause: errors.New("NATS down")}},
+		&stubPublisher{},
+	)
+	body := map[string]any{"appTag": "test", "recipients": []string{testRecipient}}
+	rr := sendRequest(t, h, body)
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", rr.Code)
+	}
+}
+
+func TestHandleSend_InternalError_CodeIsInternalError(t *testing.T) {
+	h := buildHandler(
+		&stubSenders{err: errors.New("kv connection lost")},
+		&stubQuota{}, &stubSpam{}, &stubPublisher{},
+	)
+	body := map[string]any{"appTag": "test", "recipients": []string{testRecipient}}
+	rr := sendRequest(t, h, body)
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", rr.Code)
+	}
+	var apiErr domain.ApiError
+	if err := json.Unmarshal(rr.Body.Bytes(), &apiErr); err != nil {
+		t.Fatal(err)
+	}
+	if apiErr.Code != domain.ErrInternal {
+		t.Errorf("code: want INTERNAL_ERROR, got %q", apiErr.Code)
+	}
+	if apiErr.Message == "kv connection lost" {
+		t.Error("internal error details must not leak to the client")
+	}
+}
+
 func TestHandleSend_QuotaExceeded(t *testing.T) {
 	h := buildHandler(
 		&stubSenders{sender: defaultSender()},

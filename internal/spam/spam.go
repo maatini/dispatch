@@ -32,7 +32,7 @@ func (c *Checker) Check(hash string) error {
 				Message: "duplicate message detected within spam window",
 			}
 		}
-		return fmt.Errorf("spam KV create %s: %w", hash, err)
+		return &domain.SpamStateError{Cause: fmt.Errorf("spam KV create %s: %w", hash, err)}
 	}
 	return nil
 }

@@ -126,6 +126,12 @@ func (h *Handler) handleSend(w http.ResponseWriter, r *http.Request) {
 	// Stage 5: spam
 	spamHash := hash.SpamHash(req.AppTag, req.Subject, req.Recipients, len(req.BodyContent), len(req.HtmlBodyContent))
 	if err := h.spam.Check(spamHash); err != nil {
+		var se *domain.SpamStateError
+		if errors.As(err, &se) {
+			writeError(w, http.StatusServiceUnavailable, domain.ErrNatsUnavailable,
+				"Spam service unavailable", traceID)
+			return
+		}
 		h.writeValidationError(w, err, traceID)
 		return
 	}
@@ -203,7 +209,8 @@ func (h *Handler) writeValidationError(w http.ResponseWriter, err error, traceID
 		writeError(w, status, ve.Code, ve.Message, traceID)
 		return
 	}
-	writeError(w, http.StatusInternalServerError, "", err.Error(), traceID)
+	handlerLog.Error("internal error", err, loggy.Kv("traceId", traceID))
+	writeError(w, http.StatusInternalServerError, domain.ErrInternal, "internal error", traceID)
 }
 
 func (h *Handler) writeQuotaError(w http.ResponseWriter, err error, limit int, traceID string) {
@@ -221,7 +228,8 @@ func (h *Handler) writeQuotaError(w http.ResponseWriter, err error, limit int, t
 			"Quota service unavailable", traceID)
 		return
 	}
-	writeError(w, http.StatusInternalServerError, "", err.Error(), traceID)
+	handlerLog.Error("internal error", err, loggy.Kv("traceId", traceID))
+	writeError(w, http.StatusInternalServerError, domain.ErrInternal, "internal error", traceID)
 }
 
 func writeError(w http.ResponseWriter, status int, code domain.ErrorCode, msg, traceID string) {
