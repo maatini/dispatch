@@ -190,6 +190,57 @@ func TestHandle_InvalidJSON_DeadLetter(t *testing.T) {
 	}
 }
 
+func TestHandle_MissingTraceID_GoesToDeadLetter(t *testing.T) {
+	js := &captureJS{}
+	kv := newStubKV()
+	graphCalled := false
+	proc := &Processor{
+		graph:     &callCheckGraph{onCall: func() { graphCalled = true }},
+		delivered: kv,
+		js:        js,
+	}
+
+	req := domain.MailRequestDO{AppTag: "app", Sender: testSender, Recipients: []string{testRecipient}}
+	data, _ := json.Marshal(req)
+	proc.Handle(context.Background(), &nats.Msg{Data: data, Header: nats.Header{}})
+
+	if graphCalled {
+		t.Error("missing traceId must not call MS Graph")
+	}
+	if len(kv.data) != 0 {
+		t.Errorf("delivered KV must stay empty, got %d keys", len(kv.data))
+	}
+	if len(js.records) == 0 {
+		t.Fatal("expected dead letter record")
+	}
+	var dl domain.DeadLetter
+	if err := json.Unmarshal(js.records[0], &dl); err != nil {
+		t.Fatalf("expected dead letter payload, got %v", err)
+	}
+	if dl.Error == "" {
+		t.Error("dead letter must carry a reason")
+	}
+}
+
+func TestHandle_DedupUsesPayloadTraceID(t *testing.T) {
+	js := &captureJS{}
+	kv := newStubKV()
+	proc := &Processor{graph: &stubGraph{}, delivered: kv, js: js}
+
+	req := domain.MailRequestDO{TraceID: "payload-trace", AppTag: "app", Sender: testSender, Recipients: []string{testRecipient}}
+	data, _ := json.Marshal(req)
+	h := nats.Header{}
+	h.Set("traceId", "header-trace")
+	proc.Handle(context.Background(), &nats.Msg{Data: data, Header: h})
+
+	if _, err := kv.Get("payload-trace"); err != nil {
+		t.Error("dedup entry must use payload traceId")
+	}
+	if _, err := kv.Get("header-trace"); err == nil {
+		t.Error("dedup entry must not use header traceId when payload traceId is set")
+	}
+}
+
 type callCheckGraph struct{ onCall func() }
 
 func (g *callCheckGraph) SendEmail(_ context.Context, _ domain.MailRequestDO) error {

@@ -48,20 +48,28 @@ func NewProcessor(graph emailSender, delivered nats.KeyValue, js jsPublisher, at
 	return &Processor{graph: graph, delivered: delivered, js: js, attStore: attStore}
 }
 
-func (p *Processor) Handle(ctx context.Context, msg *nats.Msg) {
-	traceID := msg.Header.Get("traceId")
-	if traceID == "" {
-		traceID = "unknown"
-	}
-	log := procLog.With(loggy.Kv("traceId", traceID))
+var errMissingTraceID = errors.New("missing traceId")
 
+func (p *Processor) Handle(ctx context.Context, msg *nats.Msg) {
 	var req domain.MailRequestDO
 	if err := json.Unmarshal(msg.Data, &req); err != nil {
-		log.Error("dead letter: JSON parse failed", err)
+		procLog.Error("dead letter: JSON parse failed", err)
 		p.writeDeadLetter(ctx, msg.Data, err)
 		_ = msg.Ack()
 		return
 	}
+
+	traceID := req.TraceID
+	if traceID == "" {
+		traceID = msg.Header.Get("traceId")
+	}
+	if traceID == "" {
+		procLog.Error("dead letter: missing traceId", errMissingTraceID)
+		p.writeDeadLetter(ctx, msg.Data, errMissingTraceID)
+		_ = msg.Ack()
+		return
+	}
+	log := procLog.With(loggy.Kv("traceId", traceID))
 
 	// idempotent dedup
 	if _, err := p.delivered.Get(traceID); err == nil {
