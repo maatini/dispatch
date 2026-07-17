@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
+	"github.com/nats-io/nats.go"
 
 	"dispatch/internal/config"
 	"dispatch/internal/domain"
@@ -48,16 +49,17 @@ const (
 
 // Handler is the HTTP handler for the mail gateway.
 type Handler struct {
-	cfg      config.Config
-	senders  senderLookup
-	quota    quotaChecker
-	spam     spamChecker
-	nats     natsPublisher
-	attStore attachmentUploader
+	cfg        config.Config
+	senders    senderLookup
+	quota      quotaChecker
+	spam       spamChecker
+	nats       natsPublisher
+	attStore   attachmentUploader
+	natsStatus func() nats.Status
 }
 
-func NewHandler(cfg config.Config, senders senderLookup, quota quotaChecker, spam spamChecker, nats natsPublisher, attStore attachmentUploader) *Handler {
-	return &Handler{cfg: cfg, senders: senders, quota: quota, spam: spam, nats: nats, attStore: attStore}
+func NewHandler(cfg config.Config, senders senderLookup, quota quotaChecker, spam spamChecker, nats natsPublisher, attStore attachmentUploader, natsStatus func() nats.Status) *Handler {
+	return &Handler{cfg: cfg, senders: senders, quota: quota, spam: spam, nats: nats, attStore: attStore, natsStatus: natsStatus}
 }
 
 func (h *Handler) Router() http.Handler {
@@ -178,11 +180,18 @@ func (h *Handler) handleSend(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleHealth(w http.ResponseWriter, _ *http.Request) {
+	status := "UP"
+	httpStatus := http.StatusOK
+	if h.natsStatus == nil || h.natsStatus() != nats.CONNECTED {
+		status = "DOWN"
+		httpStatus = http.StatusServiceUnavailable
+	}
 	w.Header().Set(headerContentType, contentTypeJSON)
+	w.WriteHeader(httpStatus)
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"status": "UP",
+		"status": status,
 		"checks": []map[string]string{
-			{"name": "nats", "status": "UP"},
+			{"name": "nats", "status": status},
 		},
 	})
 }

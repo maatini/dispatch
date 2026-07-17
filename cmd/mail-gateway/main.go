@@ -71,7 +71,7 @@ func main() {
 	publisher := gateway.NewNatsPublisher(js, cfg.NatsPublishTimeout)
 	attStore := gateway.NewAttachmentStore(objStore)
 
-	handler := gateway.NewHandler(cfg, senderStore, quotaChecker, spamChecker, publisher, attStore)
+	handler := gateway.NewHandler(cfg, senderStore, quotaChecker, spamChecker, publisher, attStore, nc.Status)
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,

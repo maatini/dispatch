@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nats-io/nats.go"
+
 	"dispatch/internal/config"
 	"dispatch/internal/domain"
 )
@@ -69,8 +71,10 @@ func defaultSender() domain.Sender {
 	return domain.Sender{AppTag: "test", Email: "noreply@example.com", DailyQuota: 100}
 }
 
+func natsConnected() nats.Status { return nats.CONNECTED }
+
 func buildHandler(senders senderLookup, quota quotaChecker, spam spamChecker, pub natsPublisher) *Handler {
-	return NewHandler(defaultCfg(), senders, quota, spam, pub, &stubAttStore{})
+	return NewHandler(defaultCfg(), senders, quota, spam, pub, &stubAttStore{}, natsConnected)
 }
 
 func sendRequest(t *testing.T, h *Handler, body any) *httptest.ResponseRecorder {
@@ -187,7 +191,7 @@ func TestHandleSend_QuotaStateError(t *testing.T) {
 }
 
 func TestHandleSend_AttachmentUploadError(t *testing.T) {
-	h := NewHandler(defaultCfg(), &stubSenders{sender: defaultSender()}, &stubQuota{}, &stubSpam{}, &stubPublisher{}, &failAttStore{})
+	h := NewHandler(defaultCfg(), &stubSenders{sender: defaultSender()}, &stubQuota{}, &stubSpam{}, &stubPublisher{}, &failAttStore{}, natsConnected)
 	body := map[string]any{
 		"appTag":     "test",
 		"recipients": []string{testRecipient},
@@ -206,13 +210,51 @@ func TestHandleSend_BodyTooLarge(t *testing.T) {
 	// MaxBodySize=10: any body > 10 bytes triggers MaxBytesError.
 	// Body must start with valid JSON chars so the scanner doesn't fail first.
 	cfg := config.Config{MaxBodySize: 10, MimeWhitelist: []string{}, MaxTotalAttachmentMB: 20}
-	h := NewHandler(cfg, &stubSenders{sender: defaultSender()}, &stubQuota{}, &stubSpam{}, &stubPublisher{}, &stubAttStore{})
+	h := NewHandler(cfg, &stubSenders{sender: defaultSender()}, &stubQuota{}, &stubSpam{}, &stubPublisher{}, &stubAttStore{}, natsConnected)
 	body := `{"appTag":"test","bodyContent":"` + strings.Repeat("x", 100) + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/dispatch/api/v1/mail/send", strings.NewReader(body))
 	rr := httptest.NewRecorder()
 	h.Router().ServeHTTP(rr, req)
 	if rr.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("expected 413, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestReady_NatsDown_Returns503(t *testing.T) {
+	h := NewHandler(defaultCfg(), &stubSenders{sender: defaultSender()}, &stubQuota{}, &stubSpam{}, &stubPublisher{}, &stubAttStore{},
+		func() nats.Status { return nats.DISCONNECTED })
+	req := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
+	rr := httptest.NewRecorder()
+	h.Router().ServeHTTP(rr, req)
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "DOWN") {
+		t.Errorf("body must contain DOWN, got %s", rr.Body.String())
+	}
+}
+
+func TestReady_NatsConnected_Returns200(t *testing.T) {
+	h := NewHandler(defaultCfg(), &stubSenders{sender: defaultSender()}, &stubQuota{}, &stubSpam{}, &stubPublisher{}, &stubAttStore{}, natsConnected)
+	req := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
+	rr := httptest.NewRecorder()
+	h.Router().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "UP") {
+		t.Errorf("body must contain UP, got %s", rr.Body.String())
+	}
+}
+
+func TestLive_AlwaysReturns200(t *testing.T) {
+	h := NewHandler(defaultCfg(), &stubSenders{sender: defaultSender()}, &stubQuota{}, &stubSpam{}, &stubPublisher{}, &stubAttStore{},
+		func() nats.Status { return nats.DISCONNECTED })
+	req := httptest.NewRequest(http.MethodGet, "/health/live", nil)
+	rr := httptest.NewRecorder()
+	h.Router().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("liveness must stay 200, got %d", rr.Code)
 	}
 }
 
