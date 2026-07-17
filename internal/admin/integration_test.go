@@ -193,9 +193,13 @@ func TestIntegration_DeadLettersReturnsRecords(t *testing.T) {
 }
 
 func TestIntegration_ReadStreamNonExistent(t *testing.T) {
-	r := NewResolver(nil, nil)
-	_, err := r.Mails(context.Background(), pagedMailArgs{})
+	js := integrationNATS(t)
+
+	// Create a fresh resolver pointing at real NATS but query a stream that
+	// does not exist — readStream must return an error, not panic.
+	r := &Resolver{js: js}
+	_, err := readStream[domain.AuditRecord](context.Background(), r.js, "NONEXISTENT_STREAM")
 	if err == nil {
-		t.Error("expected error for nil JetStream context")
+		t.Error("expected error for non-existent stream")
 	}
 }
