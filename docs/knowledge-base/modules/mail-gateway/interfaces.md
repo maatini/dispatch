@@ -42,27 +42,30 @@
 ```json
 {"status": "UP", "checks": [{"name": "nats", "status": "UP"}]}
 ```
+200 when the NATS connection is `CONNECTED`, otherwise 503 with `"status": "DOWN"`.
 
 ### `GET /health/live`
-200 OK (empty body)
+200 OK (empty body) — always, pure liveness
 
 ### `GET /health/ready`
-Same as `/health`
+Same logic as `/health`: 200 UP / 503 DOWN based on real NATS connectivity
 
 ## Error Codes
 
 | HTTP | Code | Trigger |
 |---|---|---|
-| 400 | `UNKNOWN_APP_TAG` | Invalid appTag or validation failure |
+| 400 | `UNKNOWN_APP_TAG` | appTag not found in sender KV |
+| 400 | `VALIDATION_FAILED` | Struct validation failure (missing/invalid fields) |
 | 400 | `INVALID_RECIPIENT_DOMAIN` | Domain not in sender's allowed list |
 | 400 | `SPAM_DETECTED` | Duplicate message within spam window |
-| 400 | `INVALID_ATTACHMENT_TYPE` | MIME type not whitelisted |
+| 400 | `INVALID_ATTACHMENT_TYPE` | MIME type not whitelisted or invalid base64 |
 | 400 | `ATTACHMENT_TOO_LARGE` | Total attachment size exceeds limit |
 | 400 | `BODY_TOO_LARGE` | Request body exceeds MaxBytesReader limit |
 | 400 | `JSON_PARSE_ERROR` | Invalid JSON body |
 | 413 | `BODY_TOO_LARGE` | Body exceeds `DISPATCH_VALIDATION_MAX_BODY_SIZE` |
 | 429 | `QUOTA_EXCEEDED` | Daily recipient quota reached (+ `X-RateLimit-*` headers) |
-| 503 | `NATS_UNAVAILABLE` | NATS publish failure, quota KV error, or attachment upload failure |
+| 500 | `INTERNAL_ERROR` | Unexpected non-domain error (generic message, no internal details) |
+| 503 | `NATS_UNAVAILABLE` | NATS publish failure, quota/spam KV error, or attachment upload failure |
 
 ## Interface Contracts (consumer-side)
 

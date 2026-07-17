@@ -16,6 +16,8 @@ The distinction is enforced via `errors.As(err, &transient)` in `processor.proce
 
 The `delivered` KV check runs before the MS Graph send and before the attachment fetch. If a worker crashes after sending but before ACKing, the redelivered message will find the traceID in `delivered` KV and skip. This guarantees zero double-delivery.
 
+**TraceID source:** the dedup key is `req.TraceID` from the payload, with the `traceId` NATS header only as fallback. If both are empty, the message goes to the dead-letter stream (reason `missing traceId`) and is ACKed — there is no shared `"unknown"` dedup key, so headerless messages can never collide.
+
 **Important:** The `delivered` KV write happens AFTER MS Graph success. If the write fails, it's logged but the ACK still happens — the 7-day TTL means the next delivery attempt for the same traceID would be skipped anyway.
 
 ## Attachment Fetch Failure → No ACK

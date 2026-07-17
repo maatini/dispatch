@@ -91,13 +91,15 @@ const (
     ErrUnknownAppTag, ErrInvalidRecipientDomain, ErrQuotaExceeded,
     ErrSpamDetected, ErrInvalidAttachmentType, ErrAttachmentTooLarge,
     ErrBodyTooLarge, ErrGraphTimeout, ErrGraphServerError,
-    ErrJSONParseError, ErrNatsUnavailable, ErrMessageTooLarge
+    ErrJSONParseError, ErrNatsUnavailable, ErrMessageTooLarge,
+    ErrValidationFailed, ErrInternal
 )
 
 type ApiError struct { Status int; Code ErrorCode; Message, TraceID string }
 type ValidationError struct { Code ErrorCode; Message string }
 type QuotaError struct { Limit, Current, Requested int }
 type QuotaStateError struct { Cause error }
+type SpamStateError struct { Cause error }
 type NatsPublishError struct { Cause error }
 ```
 

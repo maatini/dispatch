@@ -11,10 +11,14 @@ Implementation: `main.go` registers `/health` directly on the chi router, then m
 All stream queries (`mails`, `bounces`, `deadLetters`) create temporary subscriptions via `js.SubscribeSync("", BindStream(...), DeliverAll())`. These are unsubscribed immediately via `defer`. This means:
 - **Performance**: Reads all messages from the stream on each query — fine for moderate volumes, not suitable for large historical data
 - **No consumer tracking**: No durable consumer offsets — each query reads everything
+- **Termination**: `readStream` waits up to 5s per `NextMsg`, counts every consumed message (even ones that fail to unmarshal) against `StreamInfo.State.Msgs`, and honors request-context cancellation. Corrupt records are skipped, not fatal.
 
-## ReprocessDeadLetter Publishes Raw Payload
+## ReprocessDeadLetter Restores Headers From the Payload
 
-The `reprocessDeadLetter` mutation takes a raw JSON string and publishes it directly to `DISPATCH_MAILS`. There is no validation of the payload. This is intentional — the original gateway already validated it. If the payload was malformed, it'll end up back in the dead letter stream.
+The `reprocessDeadLetter` mutation parses the payload as `MailRequestDO` and republishes it with `traceId`/`appTag` headers (mirroring the gateway publisher), so the worker's dedup keeps working for reprocessed messages. Rules:
+- Payload fails to parse → error `invalid dead letter payload`, nothing is published
+- Payload has empty `traceId` → a fresh UUID is generated for the header
+- Corrupt payloads that once caused the dead letter therefore cannot be blindly requeued
 
 ## JWT Auth: No Custom Claims Validation
 

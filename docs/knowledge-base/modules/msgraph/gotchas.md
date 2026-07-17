@@ -6,6 +6,16 @@ The circuit breaker's `IsSuccessful` function treats `GraphPermanentError` as su
 
 This is correct behavior: a 400 Bad Request isn't a sign that MS Graph is down; it's a sign that the request was wrong.
 
+## Open Circuit Breaker Errors Are Transient
+
+When the breaker is open, `Client.do()` returns `gobreaker.ErrOpenState`/`ErrTooManyRequests` wrapped in `GraphTransientError`. This is deliberate: an open breaker means Graph is struggling, so the worker must NOT ack (redelivery) instead of writing a FAILED audit. Don't "fix" this into a permanent error.
+
+## Token Fetch: 15s Timeout, 4xx Is Permanent
+
+`fetchToken()` uses a dedicated `http.Client` with a 15s timeout (not `http.DefaultClient`). Token endpoint responses are classified by status:
+- **4xx (except 429)** → `GraphPermanentError` — wrong credentials must surface immediately (worker writes FAILED) instead of causing infinite redelivery
+- **429, 5xx, network errors** → `GraphTransientError`
+
 ## Token Cache Has 60s Expiry Buffer
 
 `tokenCache.get()` checks `time.Now().Add(60 * time.Second).After(expiresAt)` — tokens are refreshed 60 seconds before actual expiry. This prevents edge-case failures where a token expires between the check and the HTTP request.

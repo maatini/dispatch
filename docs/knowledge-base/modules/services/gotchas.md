@@ -24,9 +24,9 @@ The `spam` KV bucket has a TTL (default 60 seconds, configurable via `DISPATCH_S
 
 This means the spam window is a sliding window: any duplicate within the TTL is blocked.
 
-## spam.Checker: Get-Before-Put Is Not Atomic
+## spam.Checker: Dedup Is Atomic via KV Create
 
-The spam check does `Get(hash)` then `Put(hash)` — this is NOT an atomic check-and-set. Two concurrent requests with the same hash could both see "not found" and both proceed. This is a known trade-off: the spam check is a best-effort dedup, not a hard guarantee. The hard dedup layer is `delivered` KV in the worker.
+`Check()` calls `kv.Create(hash, …)` directly — an atomic check-and-set enforced by NATS. `ErrKeyExists` maps to `ValidationError{Code: ErrSpamDetected}`; any other KV error maps to `SpamStateError` (fail-closed, HTTP 503 at the gateway). Two concurrent identical requests cannot both pass. The second hard dedup layer remains the `delivered` KV in the worker.
 
 ## sender.Store.List() Reads All Keys Then All Values
 

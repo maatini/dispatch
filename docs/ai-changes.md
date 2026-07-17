@@ -65,3 +65,22 @@
 - `.dockerignore` (.git, .devbox, coverage-Artefakte ausgeschlossen)
 **Ergebnis:** `docker build --build-arg SERVICE=mail-gateway` → Image 4,9 MB, Build erfolgreich.
 **Hinweis:** `GOARCH=amd64` hardcoded — bei ARM-Deployments (Apple Silicon Nodes) `--platform linux/amd64` oder `GOARCH` per Build-Arg anpassen.
+
+## 2026-07-17 — plan07: Audit-Fixes Phase 1+2 (Quick Wins #1–#8, #11 teilw.)
+
+**Begründung:** Umsetzung von `plan07.md`: Quick-Win-Fixes aus `improvements.md` für Korrektheit unter Fehlerbedingungen plus echte Integrationstests; jede Aufgabe mit Regressions-Test.
+**Änderungen:**
+- `internal/msgraph` (Breaker-open → transient; Token-Client 15s-Timeout, 4xx permanent; `X-Dispatch-TraceId`-Header; NDR `toRecipients`/`receivedDateTime`)
+- `internal/bounce`, `internal/admin`, `internal/worker`, `internal/spam`, `internal/gateway`, `internal/domain` (MarkAsRead nur bei Erfolg; ReprocessDeadLetter mit TraceID-Headern; Dedup via Payload-TraceID + DLQ bei fehlender; atomares Spam-KV-`Create`; echte Readiness; Fehlercodes `VALIDATION_FAILED`/`INTERNAL_ERROR`, Spam-State 503; `readStream` 5s-Timeout + ctx)
+- `internal/{gateway,worker,admin}/integration_test.go` (5 Integrationstests hinter `//go:build integration`, Skip ohne NATS)
+- `README.md` (Testzähler 151 → 171), `improvements.md` (Items #1–#8, #11 teilw. als erledigt markiert)
+**Ergebnis:** `go build/vet/test -race` + `golangci-lint` → 171 Tests grün, 0 Issues; `go test -tags integration -race ./...` gegen lokales NATS → grün (A–E).
+**Hinweis:** Items #9 (exp-Claim) und #10 (Sonar-Token) aus den Quick Wins sind nicht Teil von plan07 und bleiben offen.
+
+## 2026-07-17 — CI: Trivy-Version auf v0.72.0 gepinnt
+
+**Begründung:** GitHub-Notiz meldete verfügbare Trivy-Version 0.72.0 (bisher 0.70.0 via Action-Default); Pinning entspricht der Tool-Version-Pinning-Policy der Pipeline.
+**Änderungen:**
+- `.github/workflows/build.yml` (`version: v0.72.0` in beiden `trivy-action`-Steps)
+- `.github/workflows/security.yml` (`version: v0.72.0` in beiden `trivy-action`-Steps)
+**Ergebnis:** Workflow-Änderung; kein lokaler Build betroffen.

@@ -11,18 +11,18 @@ If the initial run is slow (many unread messages), it may overlap with the first
 ## Per-Message Error Isolation
 
 The `crawler.Run()` loop processes each NDR message independently:
-- If `process()` fails for one message, the error is logged and the loop continues
-- If `MarkAsRead()` fails for one message, it's logged and the loop continues
+- If `process()` fails for one message, the error is logged and the loop continues — `MarkAsRead()` is skipped, so the NDR stays unread and is retried on the next run (prevents NDR loss on NATS failures)
+- If `MarkAsRead()` itself fails, it's logged and the loop continues
 
 This prevents a single corrupt NDR from blocking the entire batch.
 
 ## Trace ID Regex Is Simple
 
-The regex `X-Dispatch-TraceId:\s*([0-9a-f-]{36})` matches standard UUID format. If the NDR body doesn't contain this header, `OriginalTraceID` is empty. The bounce record is still published — it just won't correlate to a specific mail.
+The regex `X-Dispatch-TraceId:\s*([0-9a-f-]{36})` matches standard UUID format. Outgoing mails carry this header because `buildGraphEmail()` sets it via `internetMessageHeaders` on the Graph message. If an NDR body doesn't contain the header, `OriginalTraceID` is empty. The bounce record is still published — it just won't correlate to a specific mail.
 
-## BouncedRecipient Is Never Populated
+## BouncedRecipient and BouncedAt Come From the NDR
 
-The `BounceRecord.BouncedRecipient` field is always empty string. The current implementation doesn't extract the bounced recipient address from the NDR. This is a known limitation — the field exists in the schema but isn't populated.
+`GetUnreadMessages()` selects `toRecipients` and `receivedDateTime`. The crawler maps the first To-recipient to `BounceRecord.BouncedRecipient` and `receivedDateTime` to `BouncedAt` (falling back to `time.Now().UTC()` when the timestamp is missing/unparseable).
 
 ## No Unread Message Limit
 

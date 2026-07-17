@@ -65,14 +65,14 @@ Go-1.25-Features sind im Einsatz. Reale Chancen: KV `Create` für Spam; KV-Watch
 
 | # | Änderung | Impact | Effort | Risiko | Warum es zählt |
 |---|----------|--------|--------|--------|----------------|
-| 1 | `gobreaker.ErrTooManyRequests` als `GraphTransientError` wrappen in `client.do` | High | Low | Low | Fixt falsche FAILED bei Graph-Ausfällen (#1) |
-| 2 | `X-Dispatch-TraceId` via `internetMessageHeaders` in `buildGraphEmail` setzen; `MarkAsRead` nur nach erfolgreichem Publish; Recipient/receivedDateTime extrahieren | High | Low | Low | Macht das gesamte Bounce-Feature funktional; stoppt NDR-Verlust (#3) |
-| 3 | Dead Letters mit originalem `traceId`-Header republishen (aus Payload parsen) | High | Low | Low | Fixt stille Reprocessing-Verluste (#2) |
-| 4 | `spam.Check`: atomares KV `Create` statt Get+Put | High | Low | Low | Schließt TOCTOU-Race (#6) |
-| 5 | Echte Readiness: NATS-Konnektivität in `/health/ready` prüfen | High | Low | Low | Kaputte Pods verlassen die Rotation (#8) |
-| 6 | `readStream`: `NextMsg(5*time.Second)` + `ctx` respektieren | High | Low | Low | Korrekte, vollständige Admin-Ergebnisse (#5) |
-| 7 | Validierungs-Error-Codes korrigieren; nie leeren `code` emittieren; Spam-/Quota-Fehler konsistent auf 503 mappen | Medium | Low | Low | API-Vertrags-Ehrlichkeit |
-| 8 | Token-Client: dedizierter `http.Client` mit Timeout; Token-4xx als permanent klassifizieren | Medium | Low | Low | Verhindert Hangs und Infinite-Redelivery bei falschen Credentials |
+| 1 | ✅ `gobreaker.ErrTooManyRequests` als `GraphTransientError` wrappen in `client.do` (dadfa80) | High | Low | Low | Fixt falsche FAILED bei Graph-Ausfällen (#1) |
+| 2 | ✅ `X-Dispatch-TraceId` via `internetMessageHeaders` in `buildGraphEmail` setzen; `MarkAsRead` nur nach erfolgreichem Publish; Recipient/receivedDateTime extrahieren (b14a4de) | High | Low | Low | Macht das gesamte Bounce-Feature funktional; stoppt NDR-Verlust (#3) |
+| 3 | ✅ Dead Letters mit originalem `traceId`-Header republishen (aus Payload parsen); Worker-Dedup nutzt Payload-TraceID, traceId-lose Nachrichten → DLQ (8be1d47, 56c849b) | High | Low | Low | Fixt stille Reprocessing-Verluste (#2) |
+| 4 | ✅ `spam.Check`: atomares KV `Create` statt Get+Put (dbdb7df) | High | Low | Low | Schließt TOCTOU-Race (#6) |
+| 5 | ✅ Echte Readiness: NATS-Konnektivität in `/health/ready` prüfen (02fb0f8) | High | Low | Low | Kaputte Pods verlassen die Rotation (#8) |
+| 6 | ✅ `readStream`: `NextMsg(5*time.Second)` + `ctx` respektieren (de76e20) | High | Low | Low | Korrekte, vollständige Admin-Ergebnisse (#5) |
+| 7 | ✅ Validierungs-Error-Codes korrigiert (`VALIDATION_FAILED`/`INTERNAL_ERROR`); nie leeren `code`; Spam-State-Fehler auf 503 gemappt (cee5c42) | Medium | Low | Low | API-Vertrags-Ehrlichkeit |
+| 8 | ✅ Token-Client: dedizierter `http.Client` mit 15s-Timeout; Token-4xx als permanent klassifiziert (163e38b) | Medium | Low | Low | Verhindert Hangs und Infinite-Redelivery bei falschen Credentials |
 | 9 | `exp`-Claim erzwingen (`WithExpirationRequired`) oder README korrigieren | Medium | Low | Low | Doku/Code-Security-Mismatch |
 | 10 | Sonar-Token in `kladde.md` rotieren | Medium | Low | Low | Klartext-Secret auf Disk |
 
@@ -80,7 +80,7 @@ Go-1.25-Features sind im Einsatz. Reale Chancen: KV `Create` für Spam; KV-Watch
 
 | # | Änderung | Impact | Effort | Risiko | Warum es zählt |
 |---|----------|--------|--------|--------|----------------|
-| 11 | Echte Integrationstests (testcontainers/NATS) für Publisher, Consumer, Object Store, Admin-Resolver; CI-Job ehrlich machen | High | Medium | Low | Der riskanteste Code (13–55 % Cov) ist NATS-nah |
+| 11 | ✅ (teilw.) Echte Integrationstests gegen reales NATS hinter `//go:build integration` für Gateway (Happy Path, Quota), Worker (Attachment-Roundtrip, Transient-Redelivery) und Admin-Resolver (vollständige Reads inkl. korruptem Record); CI-Job führt sie jetzt real aus (eaf6344). Offen: testcontainers-Setup | High | Medium | Low | Der riskanteste Code (13–55 % Cov) ist NATS-nah |
 | 12 | Prometheus-Metriken + `traceContext` in Logs/Audit/Graph propagieren | High | Medium | Medium | Null Observability in einer Delivery-Pipeline |
 | 13 | Worker-Ack-Management: `InProgress()`-Heartbeats oder größeres `AckWait`; Delivery-Count-basierte DLQ-Eskalation statt `MaxDeliver: -1` | High | Medium | Medium | Eliminiert Redelivery-Races und Poison-Message-Loops |
 | 14 | AuthN/AuthZ-Entscheidung für `/mail/send` (mTLS, Token oder dokumentierte Isolation); per-Tenant-Admin-Authorisierung | High | Medium | Medium | Schließt die Spoofing-Frage (#4) |

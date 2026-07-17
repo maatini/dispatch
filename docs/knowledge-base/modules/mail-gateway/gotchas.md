@@ -27,8 +27,16 @@ The gateway never holds full attachment bytes in memory. `gateway.attachstore.go
 
 ## NatsPublishError Wraps the Cause
 
-When publishing fails, the error is wrapped in `domain.NatsPublishError{Cause: err}`. The handler checks for this type and returns HTTP 503. Any other unexpected error returns HTTP 500 — but in practice, all publish errors go through `NatsPublisher.Publish()` which always wraps.
+When publishing fails, the error is wrapped in `domain.NatsPublishError{Cause: err}`. The handler checks for this type and returns HTTP 503. Any other unexpected error returns HTTP 500 with code `INTERNAL_ERROR` and a generic `"internal error"` message — internal error details never leak to clients.
 
-## Health Check Is Optimistic
+## Error Contract: Codes Are Never Empty
 
-The health check always returns `"nats": "UP"` regardless of actual NATS connectivity. It's a simple liveness indicator, not a deep health probe.
+Every error response carries a typed `code`:
+- Struct validation failures → 400 `VALIDATION_FAILED` (not `UNKNOWN_APP_TAG` — that code is only for unknown appTags from the sender lookup)
+- `SpamStateError` (spam KV failure) → 503, same as `QuotaStateError` — fail-closed state errors are one class
+- Non-domain errors → 500 `INTERNAL_ERROR`
+
+## Health Endpoints: Readiness Is Real, Liveness Is Trivial
+
+- `/health` and `/health/ready` check `nc.Status()`: anything but `nats.CONNECTED` → HTTP 503 with `"status": "DOWN"`. Broken pods leave the rotation.
+- `/health/live` always returns 200 — it only signals the process is alive.

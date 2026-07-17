@@ -2,7 +2,7 @@
 
 ![Build Status](https://img.shields.io/github/actions/workflow/status/maatini/dispatch/build.yml?branch=main)
 ![Go Version](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go)
-![Tests](https://img.shields.io/badge/tests-151-brightgreen)
+![Tests](https://img.shields.io/badge/tests-171-brightgreen)
 ![Quality Gate](https://img.shields.io/badge/quality_gate-PASSED-brightgreen?logo=sonarqube)
 
 <div align="center">
@@ -163,7 +163,7 @@ devbox run sonar             # Coverage erzeugen + SonarQube-Scan
 
 | Metrik | Wert |
 |--------|------|
-| Unit-Tests | 151 |
+| Unit-Tests | 171 |
 | Mutation Score (alle Core-Packages) | 100 % Efficacy |
 | Mutation Score Threshold | ≥ 70 % (efficacy + mutation-coverage) |
 | SonarQube Quality Gate | PASSED |
