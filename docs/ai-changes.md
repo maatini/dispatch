@@ -84,3 +84,13 @@
 - `.github/workflows/build.yml` (`version: v0.72.0` in beiden `trivy-action`-Steps)
 - `.github/workflows/security.yml` (`version: v0.72.0` in beiden `trivy-action`-Steps)
 **Ergebnis:** Workflow-Änderung; kein lokaler Build betroffen.
+
+## 2026-07-17 — CI-Fix: Trivy/govulncheck-Failures + JetStream im Integration-Job
+
+**Begründung:** Build-, Security- und Integration-Workflows waren rot: Trivy fand HIGH-CVEs (stdlib go1.25.9, x/crypto v0.49.0), govulncheck analog; der Integration-Job startete NATS ohne `-js` (GHA-Services können kein Command übergeben), sodass alle JetStream-Calls mit "no responders" scheiterten.
+**Änderungen:**
+- `go.mod`/`go.sum` (x/crypto v0.52.0, x/sys v0.46.0, x/text v0.39.0, toolchain go1.26.5)
+- `Dockerfile` (Builder `golang:1.26-alpine` digest-gepinnt, go1.26.5), Workflows (setup-go 1.26.5)
+- `.github/workflows/integration.yml` (NATS via `docker run -js`-Step statt Service-Container)
+**Ergebnis:** Lokal: Trivy 0 CRITICAL/HIGH, govulncheck 0 affecting; CI: Build, Security, Integration alle grün.
+**Hinweis:** Security-Trivy scannt GHCR-`:latest` — nach dep-/Base-Image-Fixes erst nach erfolgreichem Build-Push wieder grün. CodeQL-Alert `go/disabled-certificate-check` (dev-proxy `InsecureSkipVerify`) ist bekannte, dokumentierte Ausnahme.
