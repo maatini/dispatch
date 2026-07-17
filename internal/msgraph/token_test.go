@@ -68,6 +68,70 @@ func TestFetchToken_ServerError(t *testing.T) {
 	}
 }
 
+func TestFetchToken_ClientErrorIsPermanent(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":"invalid_client"}`, http.StatusBadRequest)
+	}))
+	defer srv.Close()
+
+	_, _, err := fetchToken(context.Background(), srv.URL, "cid", "csecret")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	var perm *GraphPermanentError
+	if !errors.As(err, &perm) {
+		t.Errorf("want GraphPermanentError for 400, got %T: %v", err, err)
+	}
+}
+
+func TestFetchToken_UnauthorizedIsPermanent(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	_, _, err := fetchToken(context.Background(), srv.URL, "cid", "csecret")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	var perm *GraphPermanentError
+	if !errors.As(err, &perm) {
+		t.Errorf("want GraphPermanentError for 401, got %T: %v", err, err)
+	}
+}
+
+func TestFetchToken_ServerErrorIsTransient(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "gateway timeout", http.StatusGatewayTimeout)
+	}))
+	defer srv.Close()
+
+	_, _, err := fetchToken(context.Background(), srv.URL, "cid", "csecret")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	var transient *GraphTransientError
+	if !errors.As(err, &transient) {
+		t.Errorf("want GraphTransientError for 504, got %T: %v", err, err)
+	}
+}
+
+func TestFetchToken_TooManyRequestsIsTransient(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "rate limited", http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	_, _, err := fetchToken(context.Background(), srv.URL, "cid", "csecret")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	var transient *GraphTransientError
+	if !errors.As(err, &transient) {
+		t.Errorf("want GraphTransientError for 429, got %T: %v", err, err)
+	}
+}
+
 func TestFetchToken_InvalidJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

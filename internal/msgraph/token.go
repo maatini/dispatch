@@ -12,6 +12,8 @@ import (
 	"time"
 )
 
+var tokenHTTPClient = &http.Client{Timeout: 15 * time.Second}
+
 type tokenCache struct {
 	mu                sync.Mutex
 	accessToken       string
@@ -60,7 +62,7 @@ func fetchToken(ctx context.Context, tokenURL, clientID, clientSecret string) (s
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := tokenHTTPClient.Do(req)
 	if err != nil {
 		return "", 0, &GraphTransientError{Cause: err}
 	}
@@ -71,6 +73,9 @@ func fetchToken(ctx context.Context, tokenURL, clientID, clientSecret string) (s
 		return "", 0, fmt.Errorf("read token response: %w", err)
 	}
 
+	if resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != http.StatusTooManyRequests {
+		return "", 0, &GraphPermanentError{StatusCode: resp.StatusCode, Body: string(body)}
+	}
 	if resp.StatusCode != http.StatusOK {
 		return "", 0, &GraphTransientError{StatusCode: resp.StatusCode, Cause: fmt.Errorf("token fetch: %s", body)}
 	}
