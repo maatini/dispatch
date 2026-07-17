@@ -1,8 +1,16 @@
 .git/
 .devbox/
 .claude/
+.coverage/
 dispatch/
 coverage.out
 coverage.html
 *.test
 dev-proxy/
+**/.env*
+**/.vscode/
+**/.idea/
+**/*.pem
+**/*.key
+**/credentials*
+**/*.local

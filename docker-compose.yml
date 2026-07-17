@@ -1,6 +1,8 @@
 services:
   nats:
     image: nats:2.10-alpine
+    # WARNING: No authentication configured — for local development only.
+    # Do NOT expose to untrusted networks without adding NATS auth credentials.
     command: ["-js", "-m", "8222", "--name", "dispatch-dev"]
     ports:
       - "4222:4222"
