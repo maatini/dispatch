@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
 
 	"dispatch/internal/domain"
@@ -17,12 +18,17 @@ var resolverLog = loggy.GetLogger("Resolver")
 
 // Resolver holds all dependencies for GraphQL resolvers.
 type Resolver struct {
-	senders *sender.Store
-	js      nats.JetStreamContext
+	senders       *sender.Store
+	js            nats.JetStreamContext
+	mailPublisher mailPublisher
+}
+
+type mailPublisher interface {
+	PublishMsg(*nats.Msg, ...nats.PubOpt) (*nats.PubAck, error)
 }
 
 func NewResolver(senders *sender.Store, js nats.JetStreamContext) *Resolver {
-	return &Resolver{senders: senders, js: js}
+	return &Resolver{senders: senders, js: js, mailPublisher: js}
 }
 
 // --- Query ---
@@ -151,10 +157,25 @@ func (r *Resolver) DeleteSender(_ context.Context, args struct{ AppTag string })
 }
 
 func (r *Resolver) ReprocessDeadLetter(ctx context.Context, args struct{ Payload string }) (bool, error) {
-	if _, err := r.js.Publish(natsutil.SubjectMails, []byte(args.Payload)); err != nil {
+	var req domain.MailRequestDO
+	if err := json.Unmarshal([]byte(args.Payload), &req); err != nil {
+		return false, fmt.Errorf("invalid dead letter payload: %w", err)
+	}
+
+	traceID := req.TraceID
+	if traceID == "" {
+		traceID = uuid.New().String()
+	}
+
+	natMsg := nats.NewMsg(natsutil.SubjectMails)
+	natMsg.Header.Set("traceId", traceID)
+	natMsg.Header.Set("appTag", req.AppTag)
+	natMsg.Data = []byte(args.Payload)
+
+	if _, err := r.mailPublisher.PublishMsg(natMsg); err != nil {
 		return false, fmt.Errorf("reprocess: %w", err)
 	}
-	resolverLog.Info("dead letter reprocessed")
+	resolverLog.Info("dead letter reprocessed", loggy.Kv("traceId", traceID))
 	return true, nil
 }
 
