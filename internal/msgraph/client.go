@@ -119,6 +119,9 @@ func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, int, error)
 	})
 
 	if cbErr != nil {
+		if errors.Is(cbErr, gobreaker.ErrOpenState) || errors.Is(cbErr, gobreaker.ErrTooManyRequests) {
+			return nil, statusCode, &GraphTransientError{Cause: cbErr}
+		}
 		return nil, statusCode, cbErr
 	}
 	return body, statusCode, nil
