@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
@@ -197,19 +198,19 @@ func matchesMailFilter(rec domain.AuditRecord, f *mailFilterArgs) bool {
 
 // --- stream helpers ---
 
-func (r *Resolver) readAuditStream(_ context.Context) ([]domain.AuditRecord, error) {
-	return readStream[domain.AuditRecord](r.js, natsutil.StreamAudit)
+func (r *Resolver) readAuditStream(ctx context.Context) ([]domain.AuditRecord, error) {
+	return readStream[domain.AuditRecord](ctx, r.js, natsutil.StreamAudit)
 }
 
-func (r *Resolver) readBounceStream(_ context.Context) ([]domain.BounceRecord, error) {
-	return readStream[domain.BounceRecord](r.js, natsutil.StreamBounces)
+func (r *Resolver) readBounceStream(ctx context.Context) ([]domain.BounceRecord, error) {
+	return readStream[domain.BounceRecord](ctx, r.js, natsutil.StreamBounces)
 }
 
-func (r *Resolver) readDeadLetterStream(_ context.Context) ([]domain.DeadLetter, error) {
-	return readStream[domain.DeadLetter](r.js, natsutil.StreamDeadLetter)
+func (r *Resolver) readDeadLetterStream(ctx context.Context) ([]domain.DeadLetter, error) {
+	return readStream[domain.DeadLetter](ctx, r.js, natsutil.StreamDeadLetter)
 }
 
-func readStream[T any](js nats.JetStreamContext, stream string) ([]T, error) {
+func readStream[T any](ctx context.Context, js nats.JetStreamContext, stream string) ([]T, error) {
 	info, err := js.StreamInfo(stream)
 	if err != nil {
 		return nil, fmt.Errorf("stream info %s: %w", stream, err)
@@ -225,17 +226,19 @@ func readStream[T any](js nats.JetStreamContext, stream string) ([]T, error) {
 	defer func() { _ = sub.Unsubscribe() }()
 
 	var results []T
-	for {
-		msg, err := sub.NextMsg(0)
+	consumed := uint64(0)
+	for consumed < info.State.Msgs {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		msg, err := sub.NextMsg(5 * time.Second)
 		if err != nil {
 			break
 		}
+		consumed++
 		var item T
 		if jsonErr := json.Unmarshal(msg.Data, &item); jsonErr == nil {
 			results = append(results, item)
-		}
-		if uint64(len(results)) >= info.State.Msgs {
-			break
 		}
 	}
 	return results, nil
