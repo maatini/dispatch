@@ -202,12 +202,13 @@ type graphEmail struct {
 }
 
 type graphMessage struct {
-	Subject       string           `json:"subject,omitempty"`
-	Body          graphBody        `json:"body"`
-	ToRecipients  []graphRecipient `json:"toRecipients"`
-	CcRecipients  []graphRecipient `json:"ccRecipients,omitempty"`
-	BccRecipients []graphRecipient `json:"bccRecipients,omitempty"`
-	Attachments   []graphAttach    `json:"attachments,omitempty"`
+	Subject                string               `json:"subject,omitempty"`
+	Body                   graphBody            `json:"body"`
+	ToRecipients           []graphRecipient     `json:"toRecipients"`
+	CcRecipients           []graphRecipient     `json:"ccRecipients,omitempty"`
+	BccRecipients          []graphRecipient     `json:"bccRecipients,omitempty"`
+	Attachments            []graphAttach        `json:"attachments,omitempty"`
+	InternetMessageHeaders []graphMessageHeader `json:"internetMessageHeaders,omitempty"`
 }
 
 type graphBody struct {
@@ -226,6 +227,11 @@ type graphAttach struct {
 	Name         string `json:"name"`
 	ContentType  string `json:"contentType"`
 	ContentBytes []byte `json:"contentBytes"`
+}
+
+type graphMessageHeader struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
 }
 
 func buildGraphEmail(req domain.MailRequestDO, includeAttachments bool) graphEmail {
@@ -248,6 +254,9 @@ func buildGraphEmail(req domain.MailRequestDO, includeAttachments bool) graphEma
 		ToRecipients:  toGraphRecipients(req.Recipients),
 		CcRecipients:  toGraphRecipients(req.CcRecipients),
 		BccRecipients: toGraphRecipients(req.BccRecipients),
+		InternetMessageHeaders: []graphMessageHeader{
+			{Name: "X-Dispatch-TraceId", Value: req.TraceID},
+		},
 	}
 
 	if includeAttachments {

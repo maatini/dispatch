@@ -2,11 +2,14 @@ package msgraph
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"dispatch/internal/domain"
 )
 
 func chunkTestService(httpClient *http.Client) *Service {
@@ -74,5 +77,41 @@ func TestUploadChunks_ServerError(t *testing.T) {
 	var transient *GraphTransientError
 	if !errors.As(err, &transient) {
 		t.Errorf("want GraphTransientError, got %T", err)
+	}
+}
+
+func TestBuildGraphEmail_SetsTraceHeader(t *testing.T) {
+	req := domain.MailRequestDO{
+		TraceID:    "test-trace-id-123",
+		Subject:    "Test",
+		Recipients: []string{"to@example.com"},
+	}
+	result := buildGraphEmail(req, false)
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var parsed struct {
+		Message struct {
+			InternetMessageHeaders []struct {
+				Name  string `json:"name"`
+				Value string `json:"value"`
+			} `json:"internetMessageHeaders"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	headers := parsed.Message.InternetMessageHeaders
+	if len(headers) != 1 {
+		t.Fatalf("want 1 header, got %d", len(headers))
+	}
+	if headers[0].Name != "X-Dispatch-TraceId" {
+		t.Errorf("header name: want X-Dispatch-TraceId, got %s", headers[0].Name)
+	}
+	if headers[0].Value != "test-trace-id-123" {
+		t.Errorf("header value: want test-trace-id-123, got %s", headers[0].Value)
 	}
 }

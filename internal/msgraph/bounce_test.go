@@ -35,8 +35,8 @@ func TestBounceService_GetUnreadMessages(t *testing.T) {
 		gotFilter = r.URL.Query().Get("$filter")
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"value":[
-			{"id":"msg1","subject":"Undeliverable: Hello","body":{"content":"X-Dispatch-TraceId: abc-123"}},
-			{"id":"msg2","subject":"NDR","body":{"content":"no trace id"}}
+			{"id":"msg1","subject":"Undeliverable: Hello","body":{"content":"X-Dispatch-TraceId: abc-123"},"toRecipients":[{"emailAddress":{"address":"bounced@example.com"}}],"receivedDateTime":"2026-01-15T10:30:00Z"},
+			{"id":"msg2","subject":"NDR","body":{"content":"no trace id"},"toRecipients":[],"receivedDateTime":""}
 		]}`))
 	}))
 	defer srv.Close()
@@ -57,6 +57,12 @@ func TestBounceService_GetUnreadMessages(t *testing.T) {
 	}
 	if msgs[0].ID != "msg1" || msgs[0].Subject != "Undeliverable: Hello" || msgs[0].Body != "X-Dispatch-TraceId: abc-123" {
 		t.Errorf("message[0]: got %+v", msgs[0])
+	}
+	if msgs[0].Recipient != "bounced@example.com" {
+		t.Errorf("message[0].Recipient: want bounced@example.com, got %s", msgs[0].Recipient)
+	}
+	if msgs[0].ReceivedAt.IsZero() {
+		t.Error("message[0].ReceivedAt should not be zero")
 	}
 	if msgs[1].ID != "msg2" {
 		t.Errorf("message[1].ID: want msg2, got %s", msgs[1].ID)
@@ -132,13 +138,19 @@ func TestBounceService_MarkAsRead_GraphError(t *testing.T) {
 }
 
 func TestParseNDRMessages_Valid(t *testing.T) {
-	data := []byte(`{"value":[{"id":"x","subject":"NDR","body":{"content":"trace body"}}]}`)
+	data := []byte(`{"value":[{"id":"x","subject":"NDR","body":{"content":"trace body"},"toRecipients":[{"emailAddress":{"address":"b@x.com"}}],"receivedDateTime":"2026-01-15T10:30:00Z"}]}`)
 	msgs, err := parseNDRMessages(data)
 	if err != nil {
 		t.Fatalf(errUnexpected, err)
 	}
 	if len(msgs) != 1 || msgs[0].ID != "x" || msgs[0].Subject != "NDR" || msgs[0].Body != "trace body" {
 		t.Errorf("unexpected result: %+v", msgs)
+	}
+	if msgs[0].Recipient != "b@x.com" {
+		t.Errorf("Recipient: want b@x.com, got %s", msgs[0].Recipient)
+	}
+	if msgs[0].ReceivedAt.IsZero() {
+		t.Error("ReceivedAt should not be zero")
 	}
 }
 

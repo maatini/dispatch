@@ -29,9 +29,11 @@ type jsPublisher interface {
 
 // NDRMessage represents a non-delivery report from MS Graph.
 type NDRMessage struct {
-	ID      string
-	Body    string
-	Subject string
+	ID         string
+	Body       string
+	Subject    string
+	Recipient  string
+	ReceivedAt time.Time
 }
 
 // Crawler reads NDR messages from a bounce mailbox and writes BounceRecords to NATS.
@@ -59,6 +61,7 @@ func (c *Crawler) Run(ctx context.Context) error {
 				loggy.Kv("messageId", msg.ID),
 				loggy.Kv("error", err.Error()),
 			)
+			continue
 		}
 		if err := c.graph.MarkAsRead(ctx, c.mailbox, msg.ID); err != nil {
 			crawlerLog.Warn("mark as read failed",
@@ -73,11 +76,16 @@ func (c *Crawler) Run(ctx context.Context) error {
 func (c *Crawler) process(ctx context.Context, msg NDRMessage) error {
 	traceID := extractTraceID(msg.Body)
 
+	bouncedAt := msg.ReceivedAt
+	if bouncedAt.IsZero() {
+		bouncedAt = time.Now().UTC()
+	}
+
 	record := domain.BounceRecord{
 		OriginalTraceID:  traceID,
-		BouncedAt:        time.Now().UTC(),
+		BouncedAt:        bouncedAt,
 		BounceReason:     msg.Subject,
-		BouncedRecipient: "",
+		BouncedRecipient: msg.Recipient,
 		ProcessedAt:      time.Now().UTC(),
 	}
 

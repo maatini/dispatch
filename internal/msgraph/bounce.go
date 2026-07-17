@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"dispatch/internal/bounce"
 )
@@ -30,7 +31,7 @@ func (s *BounceService) apiBase() string {
 // GetUnreadMessages fetches unread messages from the bounce mailbox.
 // Graph API: GET /users/{mailbox}/messages?$filter=isRead eq false&$select=id,subject,body
 func (s *BounceService) GetUnreadMessages(ctx context.Context, mailbox string) ([]bounce.NDRMessage, error) {
-	u := fmt.Sprintf("%s/users/%s/messages?$filter=isRead+eq+false&$select=id,subject,body", s.apiBase(), mailbox)
+	u := fmt.Sprintf("%s/users/%s/messages?$filter=isRead+eq+false&$select=id,subject,body,toRecipients,receivedDateTime", s.apiBase(), mailbox)
 	body, _, err := s.client.doWithRetry(ctx, func() (*http.Request, error) {
 		return http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	})
@@ -61,6 +62,12 @@ func parseNDRMessages(data []byte) ([]bounce.NDRMessage, error) {
 			Body    struct {
 				Content string `json:"content"`
 			} `json:"body"`
+			ToRecipients []struct {
+				EmailAddress struct {
+					Address string `json:"address"`
+				} `json:"emailAddress"`
+			} `json:"toRecipients"`
+			ReceivedDateTime string `json:"receivedDateTime"`
 		} `json:"value"`
 	}
 	if err := json.Unmarshal(data, &resp); err != nil {
@@ -68,7 +75,18 @@ func parseNDRMessages(data []byte) ([]bounce.NDRMessage, error) {
 	}
 	msgs := make([]bounce.NDRMessage, len(resp.Value))
 	for i, m := range resp.Value {
-		msgs[i] = bounce.NDRMessage{ID: m.ID, Subject: m.Subject, Body: m.Body.Content}
+		recipient := ""
+		if len(m.ToRecipients) > 0 {
+			recipient = m.ToRecipients[0].EmailAddress.Address
+		}
+		receivedAt, _ := time.Parse(time.RFC3339, m.ReceivedDateTime)
+		msgs[i] = bounce.NDRMessage{
+			ID:         m.ID,
+			Subject:    m.Subject,
+			Body:       m.Body.Content,
+			Recipient:  recipient,
+			ReceivedAt: receivedAt,
+		}
 	}
 	return msgs, nil
 }
