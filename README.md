@@ -2,7 +2,7 @@
 
 ![Build Status](https://img.shields.io/github/actions/workflow/status/maatini/dispatch/build.yml?branch=main)
 ![Go Version](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go)
-![Tests](https://img.shields.io/badge/tests-254-brightgreen)
+![Tests](https://img.shields.io/badge/tests-249-brightgreen)
 ![Quality Gate](https://img.shields.io/badge/quality_gate-PASSED-brightgreen?logo=sonarqube)
 
 <div align="center">
@@ -83,6 +83,7 @@ MS_GRAPH_CLIENT_ID       } entfallen wenn MS_GRAPH_MOCK_TOKEN gesetzt ist
 MS_GRAPH_CLIENT_SECRET  /
 MS_GRAPH_SENDER_EMAIL
 DISPATCH_ADMIN_AUTH_SECRET   # HMAC-Schlüssel für Admin-API JWT-Auth
+DISPATCH_GATEWAY_AUTH_TOKEN  # Bearer-Token für POST /mail/send (Pflicht, außer Auth disabled)
 ```
 
 ### Optional
@@ -92,6 +93,7 @@ PORT=8080
 MS_GRAPH_BOUNCE_MAILBOX           # default: MS_GRAPH_SENDER_EMAIL
 MS_GRAPH_MOCK_TOKEN=              # OAuth2 überspringen, Credentials optional (nur Dev)
 MS_GRAPH_PROXY_URL=               # Graph-Calls durch Dev Proxy routen (z. B. http://localhost:8000)
+DISPATCH_GATEWAY_AUTH_DISABLED=   # true = Send-Auth aus (nur lokaler Dev; nicht in Prod)
 DISPATCH_SPAM_TIMEOUT_SECONDS=60
 DISPATCH_VALIDATION_MAX_BODY_SIZE=10000000
 DISPATCH_VALIDATION_MIME_WHITELIST=application/pdf,image/jpeg,image/png,...
@@ -125,6 +127,7 @@ MS_GRAPH_TENANT_ID=<azure-tenant-id>
 MS_GRAPH_CLIENT_ID=<client-id>
 MS_GRAPH_CLIENT_SECRET=<client-secret>
 MS_GRAPH_SENDER_EMAIL=noreply-dev@example.com
+DISPATCH_GATEWAY_AUTH_TOKEN=dev-token
 DISPATCH_SPAM_TIMEOUT_SECONDS=5
 DISPATCH_GRAPH_RATE_LIMITER_SKIP_SLEEP=true
 ```
@@ -195,9 +198,14 @@ Statische Code-Analyse via [SonarQube](http://10.27.27.202:9000/dashboard?id=dis
 
 ### Mail senden
 
+Erfordert `Authorization: Bearer <DISPATCH_GATEWAY_AUTH_TOKEN>` (Health-Endpunkte ohne Auth).
+Gateway nicht öffentlich exponieren — Token ist Defense-in-Depth, nicht Ersatz für Netzwerk-Isolation.
+`mail-gateway` startet ohne Token nur mit `DISPATCH_GATEWAY_AUTH_DISABLED=true` (nur lokaler Dev).
+
 ```
 POST /dispatch/api/v1/mail/send
 Content-Type: application/json
+Authorization: Bearer <DISPATCH_GATEWAY_AUTH_TOKEN>
 
 {
   "appTag": "sunshine-app",
@@ -224,6 +232,7 @@ Content-Type: application/json
 |--------|-----------|
 | `202` | Nachricht an NATS übergeben |
 | `400` | Validierungsfehler (Pflichtfelder, Domain, Spam, MIME) |
+| `401` | Fehlendes oder ungültiges Gateway-Token |
 | `413` | Request-Body überschreitet Größenlimit (`DISPATCH_VALIDATION_MAX_BODY_SIZE`) |
 | `429` | Tages-Quota überschritten (`X-RateLimit-Limit`, `X-RateLimit-Remaining`) |
 | `503` | NATS nicht erreichbar, Quota-State-Fehler oder Attachment-Upload fehlgeschlagen |

@@ -21,9 +21,9 @@ The mail worker is the **delivery orchestrator** — it consumes messages from N
 | 4 | Test mode | `processor.go:77-80` | If `sender.Test == true`, skip MS Graph, write `TEST_SUCCESS` audit | (none — always succeeds) |
 | 5 | MS Graph send | `processor.go:81` → `msgraph.Service.SendEmail()` | Inline (≤3 MB) or upload session (>3 MB) | See error semantics below |
 | 6 | Audit write | `processor.go:85-87` | Publish `AuditRecord` to `DISPATCH_AUDIT` | Logged, but does not block |
-| 7 | Dedup record | `processor.go:88-90` | Write `traceID` to `delivered` KV | Logged, no retry |
-| 8 | Attachment cleanup | `processor.go:91-93` | Delete objects from Object Store | Logged, no retry (TTL handles orphans) |
-| 9 | ACK | `processor.go:94` | Acknowledge message to NATS | — |
+| 7 | Dedup record | `processor.go` | Write `traceID` to `delivered` KV | **No ACK** if Put fails (fail-closed) |
+| 8 | Attachment cleanup | `processor.go` | Delete objects from Object Store | Only after successful Put; best-effort (TTL handles orphans) |
+| 9 | ACK | `processor.go` | Acknowledge message to NATS | Only after successful `delivered` Put |
 
 ## Error Semantics
 
@@ -33,14 +33,14 @@ The mail worker is the **delivery orchestrator** — it consumes messages from N
 | `GraphTransientError` (429/5xx/IO) | **No ACK** → JetStream redelivers; attachments kept in Object Store for next attempt |
 | `GraphPermanentError` (4xx≠429) | ACK + write `FAILED` to `DISPATCH_AUDIT` + cleanup attachments |
 | Attachment fetch error | No ACK → JetStream redelivers |
-| Audit write failure | Logged; does not block ACK |
-| `delivered` KV write failure | Logged; does not block ACK |
+| Audit write failure | Logged; does not block Put/ACK |
+| `delivered` KV write failure | **No ACK**, no attachment cleanup → JetStream redelivers |
 
 ## Invariants
 
 | Invariant | Enforcement |
 |---|---|
-| Zero double-delivery | Dedup check (`delivered` KV) before any MS Graph call |
+| Zero double-delivery | Dedup Get before Graph; Dedup Put must succeed before ACK |
 | Transient errors never lose messages | No ACK → JetStream holds and redelivers |
 | Permanent errors are terminal | ACK + FAILED audit → message removed from work queue |
 | Attachment cleanup eventually happens | Explicit cleanup on success/failure; bucket TTL (72h) handles orphans |

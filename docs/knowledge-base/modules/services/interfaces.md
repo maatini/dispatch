@@ -10,10 +10,9 @@ func NewChecker(kv nats.KeyValue) *Checker
 // Check verifies and records recipient usage.
 // Returns nil on success, QuotaError if exceeded, QuotaStateError if KV unavailable.
 func (c *Checker) Check(appTag string, limit, requested int) error
-
-// CurrentUsage returns the rolling 24h recipient count (for X-RateLimit-* headers).
-func (c *Checker) CurrentUsage(appTag string) (int, error)
 ```
+
+Rate-limit response headers (`X-RateLimit-*`) are set by the gateway from `*domain.QuotaError` fields (`Limit`, `Current`) when `Check` returns a quota exceeded error — there is no separate `CurrentUsage` API.
 
 **KV store interface (consumer-side):**
 ```go
@@ -27,7 +26,7 @@ type kvStore interface {
 ## sender.Store
 
 ```go
-type Store struct { ... }
+type Store struct { ... } // fields private (kv, cacheTTL, mu, cache)
 
 const DefaultCacheTTL = 10 * time.Minute
 
@@ -49,6 +48,8 @@ type KV interface {
 }
 ```
 
+Tests inject `testkit.MockKV` (or any `sender.KV`) via `sender.New` — Store fields are not exported.
+
 ## spam.Checker
 
 ```go
@@ -57,15 +58,15 @@ type Checker struct { ... }
 func NewChecker(kv nats.KeyValue) *Checker
 
 // Check returns ValidationError if the hash was seen within the bucket TTL.
-// Otherwise records the hash and returns nil.
+// Otherwise records the hash atomically via KV Create and returns nil.
+// Non-existence conflicts → SpamStateError (fail-closed).
 func (c *Checker) Check(hash string) error
 ```
 
 **KV store interface (consumer-side):**
 ```go
 type kvStore interface {
-    Get(key string) (nats.KeyValueEntry, error)
-    Put(key string, value []byte) (uint64, error)
+    Create(key string, value []byte) (uint64, error)
 }
 ```
 
@@ -77,3 +78,4 @@ type kvStore interface {
 | `quota.Check()` → KV failure | `*domain.QuotaStateError` | 503 |
 | `sender.Get()` → unknown | `*domain.ValidationError{Code: ErrUnknownAppTag}` | 400 |
 | `spam.Check()` → duplicate | `*domain.ValidationError{Code: ErrSpamDetected}` | 400 |
+| `spam.Check()` → KV failure | `*domain.SpamStateError` | 503 |

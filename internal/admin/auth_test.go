@@ -24,10 +24,23 @@ func signedToken(t *testing.T, secret string, expiry time.Time) string {
 	return tok
 }
 
+func signedTokenWithoutExp(t *testing.T, secret string) string {
+	t.Helper()
+	// MapClaims without exp — signature valid, but must be rejected when exp is required.
+	tok, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"sub": "admin",
+	}).SignedString([]byte(secret))
+	if err != nil {
+		t.Fatalf("sign token without exp: %v", err)
+	}
+	return tok
+}
+
 func TestAuthMiddleware(t *testing.T) {
 	validToken := signedToken(t, authTestSecret, time.Now().Add(time.Hour))
 	expiredToken := signedToken(t, authTestSecret, time.Now().Add(-time.Hour))
 	wrongSecretToken := signedToken(t, "wrong-secret", time.Now().Add(time.Hour))
+	noExpToken := signedTokenWithoutExp(t, authTestSecret)
 
 	cases := []struct {
 		name       string
@@ -38,6 +51,7 @@ func TestAuthMiddleware(t *testing.T) {
 		{"no token", "", http.StatusUnauthorized},
 		{"wrong secret", bearerPrefix + wrongSecretToken, http.StatusUnauthorized},
 		{"expired token", bearerPrefix + expiredToken, http.StatusUnauthorized},
+		{"no exp claim", bearerPrefix + noExpToken, http.StatusUnauthorized},
 		{"malformed token", "Bearer notajwt", http.StatusUnauthorized},
 		{"missing bearer prefix", validToken, http.StatusUnauthorized},
 	}

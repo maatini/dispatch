@@ -17,8 +17,10 @@ import (
 )
 
 const (
-	testRecipient = "user@example.com"
-	want400Fmt    = "expected 400, got %d"
+	testRecipient    = "user@example.com"
+	want400Fmt       = "expected 400, got %d"
+	testGatewayToken = "test-gateway-token"
+	authHeaderBearer = "Bearer "
 )
 
 // stubs
@@ -63,6 +65,7 @@ func defaultCfg() config.Config {
 		MaxBodySize:          10_000_000,
 		MimeWhitelist:        []string{"application/pdf", "image/jpeg"},
 		MaxTotalAttachmentMB: 20,
+		GatewayAuthToken:     testGatewayToken,
 	}
 }
 
@@ -78,12 +81,20 @@ func buildHandler(senders senderLookup, quota quotaChecker, spam spamChecker, pu
 
 func sendRequest(t *testing.T, h *Handler, body any) *httptest.ResponseRecorder {
 	t.Helper()
+	return sendRequestAuth(t, h, body, authHeaderBearer+testGatewayToken)
+}
+
+func sendRequestAuth(t *testing.T, h *Handler, body any, authHeader string) *httptest.ResponseRecorder {
+	t.Helper()
 	data, err := json.Marshal(body)
 	if err != nil {
 		t.Fatal(err)
 	}
 	req := httptest.NewRequest(http.MethodPost, "/dispatch/api/v1/mail/send", bytes.NewReader(data))
 	req.Header.Set("Content-Type", "application/json")
+	if authHeader != "" {
+		req.Header.Set("Authorization", authHeader)
+	}
 	rr := httptest.NewRecorder()
 	h.Router().ServeHTTP(rr, req)
 	return rr
@@ -263,14 +274,59 @@ func TestHandleSend_AttachmentUploadError(t *testing.T) {
 func TestHandleSend_BodyTooLarge(t *testing.T) {
 	// MaxBodySize=10: any body > 10 bytes triggers MaxBytesError.
 	// Body must start with valid JSON chars so the scanner doesn't fail first.
-	cfg := config.Config{MaxBodySize: 10, MimeWhitelist: []string{}, MaxTotalAttachmentMB: 20}
+	cfg := config.Config{MaxBodySize: 10, MimeWhitelist: []string{}, MaxTotalAttachmentMB: 20, GatewayAuthToken: testGatewayToken}
 	h := NewHandler(cfg, &stubSenders{sender: defaultSender()}, &stubQuota{}, &stubSpam{}, &stubPublisher{}, &stubAttStore{}, natsConnected)
 	body := `{"appTag":"test","bodyContent":"` + strings.Repeat("x", 100) + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/dispatch/api/v1/mail/send", strings.NewReader(body))
+	req.Header.Set("Authorization", authHeaderBearer+testGatewayToken)
 	rr := httptest.NewRecorder()
 	h.Router().ServeHTTP(rr, req)
 	if rr.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("expected 413, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestHandleSend_MissingAuth_Unauthorized(t *testing.T) {
+	h := buildHandler(&stubSenders{sender: defaultSender()}, &stubQuota{}, &stubSpam{}, &stubPublisher{})
+	body := map[string]any{"appTag": "test", "recipients": []string{testRecipient}, "subject": "Hi"}
+	rr := sendRequestAuth(t, h, body, "")
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "UNAUTHORIZED") {
+		t.Errorf("body must contain UNAUTHORIZED, got %s", rr.Body.String())
+	}
+}
+
+func TestHandleSend_WrongAuth_Unauthorized(t *testing.T) {
+	h := buildHandler(&stubSenders{sender: defaultSender()}, &stubQuota{}, &stubSpam{}, &stubPublisher{})
+	body := map[string]any{"appTag": "test", "recipients": []string{testRecipient}, "subject": "Hi"}
+	rr := sendRequestAuth(t, h, body, authHeaderBearer+"wrong-token")
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestHandleSend_AuthDisabled_AllowsWithoutToken(t *testing.T) {
+	cfg := defaultCfg()
+	cfg.GatewayAuthToken = "" // middleware not registered when token empty
+	h := NewHandler(cfg, &stubSenders{sender: defaultSender()}, &stubQuota{}, &stubSpam{}, &stubPublisher{}, &stubAttStore{}, natsConnected)
+	body := map[string]any{"appTag": "test", "recipients": []string{testRecipient}, "subject": "Hi"}
+	rr := sendRequestAuth(t, h, body, "")
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 without auth when token empty, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestHealth_Unauthenticated(t *testing.T) {
+	h := buildHandler(&stubSenders{sender: defaultSender()}, &stubQuota{}, &stubSpam{}, &stubPublisher{})
+	for _, path := range []string{"/health", "/health/live", "/health/ready"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rr := httptest.NewRecorder()
+		h.Router().ServeHTTP(rr, req)
+		if rr.Code == http.StatusUnauthorized {
+			t.Errorf("%s must not require auth, got 401", path)
+		}
 	}
 }
 

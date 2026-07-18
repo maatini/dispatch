@@ -19,7 +19,7 @@ LLM-optimized architecture documentation for [dispatch](https://github.com/maati
 | Work on the NDR bounce crawler | [modules/bounce-management/index.md](modules/bounce-management/index.md) |
 | Understand the MS Graph integration | [modules/msgraph/index.md](modules/msgraph/index.md) |
 | Work on domain types, config, or version | [modules/core/index.md](modules/core/index.md) |
-| Work on logging, NATS setup, hashing, or PII masking | [modules/infrastructure/index.md](modules/infrastructure/index.md) |
+| Work on logging, NATS setup, HTTP lifecycle, hashing, or PII masking | [modules/infrastructure/index.md](modules/infrastructure/index.md) |
 | Work on quota, sender cache, or spam dedup | [modules/services/index.md](modules/services/index.md) |
 | Find cross-cutting @tag definitions | [cross-cutting/tags.md](cross-cutting/tags.md) |
 | Follow coding conventions used across modules | [cross-cutting/shared-patterns.md](cross-cutting/shared-patterns.md) |
@@ -39,7 +39,7 @@ docs/knowledge-base/
 │   ├── bounce-management/      # Scheduled NDR crawler
 │   ├── msgraph/                # MS Graph API client (auth, circuit breaker, send, bounce polling)
 │   ├── core/                   # Domain types, config loading, version
-│   ├── infrastructure/         # loggy, natsutil, hash, pii
+│   ├── infrastructure/         # loggy, natsutil, httpsrv, testkit, hash, pii
 │   └── services/               # quota, sender store, spam dedup
 ├── cross-cutting/              # Tags registry, shared patterns
 └── maintenance.md              # How to keep this KB up to date

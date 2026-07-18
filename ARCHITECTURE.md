@@ -209,6 +209,7 @@ bounce.Crawler.Run(ctx)                     ← internal/bounce
 | Quota überschritten | 429 + `X-RateLimit-*` | Stage 4 |
 | KV-Fehler bei Quota | 503 | Stage 4 (fail-closed) |
 | Spam-Duplikat | 400 | Stage 5 |
+| KV-Fehler bei Spam | 503 | Stage 5 (fail-closed, `SpamStateError`) |
 | Object-Store-Fehler | 503 | Attachment-Upload |
 | NATS-Publish-Fehler | 503 | Publish |
 
@@ -218,7 +219,7 @@ bounce.Crawler.Run(ctx)                     ← internal/bounce
 
 **Quota:** Fail-closed. Jeder KV-Fehler → HTTP 503, kein Bypass. Optimistic CAS mit max. 10 Retries; nach Erschöpfung → `QuotaStateError`.
 
-**Worker-Idempotenz:** `delivered` KV (7-Tage-TTL) verhindert Doppelversand bei Worker-Absturz nach Graph-Erfolg und vor ACK.
+**Worker-Idempotenz:** `delivered` KV (7-Tage-TTL) verhindert Doppelversand bei Worker-Absturz nach Graph-Erfolg und vor ACK. Put vor ACK ist fail-closed (Put-Fehler → kein ACK).
 
 **Attachments:** NATS Object Store entkoppelt Payload-Größe vom JetStream-Limit. Bucket-TTL (72 h) bereinigt Waisen-Objekte nach Worker-Crash ohne Cleanup.
 
@@ -254,19 +255,14 @@ Jeder Log-Eintrag trägt ein `"type"`-Feld (`LogCategory`), das den semantischen
 
 | Kategorie | Konstante | Typischer Auslöser |
 |---|---|---|
-| `INFO` | `CategoryInfo` | Normaler Betrieb |
-| `BUSINESS_LOGIC` | `CategoryBusinessLogic` | Domain-Entscheidungen |
+| `INFO` | `CategoryInfo` | Normaler Betrieb (`.Info`) |
+| `DEFAULT` | `CategoryDefault` | Generische Warn/Error ohne Spezialkategorie |
+| `BUSINESS_LOGIC` | `CategoryBusinessLogic` | Domain-Entscheidungen (via Infoc/Warnc/Errorc) |
 | `BUSINESS_RULE_VIOLATION` | `CategoryBusinessRuleViolation` | Domain-Whitelist, Quota, Spam |
-| `VALIDATION` | `CategoryValidation` | Eingabefehler |
-| `MISSING_DATA` | `CategoryMissingData` | Erwartetes Feld fehlt |
-| `CRITICAL` | `CategoryCritical` | Systemgefährdende Fehler |
-| `UNCAUGHT_EXCEPTION` | `CategoryUncaughtException` | Panic/recover an Systemgrenzen |
-| `SECURITY` | `CategorySecurity` | Abgelaufene Credentials |
+| `CRITICAL` | `CategoryCritical` | Systemgefährdende Fehler (`.Critical`) |
 | `API_REQUEST` | `CategoryAPIRequest` | Erfolgreicher MS-Graph-Call |
 | `API_EXTERNAL_FAILURE` | `CategoryAPIExternalFailure` | 5xx / Netzwerkfehler |
 | `API_CLIENT_ERROR` | `CategoryAPIClientError` | 4xx gegen externe API |
-| `PERFORMANCE` | `CategoryPerformance` | Laufzeitmessungen |
-| `UNSTRUCTURED` | `CategoryUnstructured` | Freitext-Logs (Notlösung) |
 
 ### API-Tracking
 
@@ -330,6 +326,7 @@ MS_GRAPH_CLIENT_ID            } entfallen wenn MS_GRAPH_MOCK_TOKEN gesetzt
 MS_GRAPH_CLIENT_SECRET       /
 MS_GRAPH_SENDER_EMAIL
 DISPATCH_ADMIN_AUTH_SECRET   # HMAC-Schlüssel für Admin-API JWT-Auth
+DISPATCH_GATEWAY_AUTH_TOKEN  # Bearer für POST /mail/send (nur mail-gateway; Pflicht außer DISABLED)
 ```
 
 **Optionale Felder (Auswahl):**
@@ -339,6 +336,7 @@ DISPATCH_SPAM_TIMEOUT_SECONDS=60
 DISPATCH_VALIDATION_MAX_BODY_SIZE=10000000
 DISPATCH_MAX_TOTAL_ATTACHMENT_SIZE_MB=20
 DISPATCH_GRAPH_RATE_LIMITER_SKIP_SLEEP=false
+DISPATCH_GATEWAY_AUTH_DISABLED=false  # true nur local/dev — sonst fail-closed ohne Token
 MS_GRAPH_PROXY_URL=           # Dev Proxy (http://localhost:8000)
 MS_GRAPH_MOCK_TOKEN=          # Überspringt OAuth2, macht Credentials optional
 ```

@@ -12,14 +12,18 @@ Mixing these up would cause either:
 
 The distinction is enforced via `errors.As(err, &transient)` in `processor.processSend()`.
 
-## Dedup Is Fail-Closed
+## Dedup Is Fail-Closed (Get and Put)
 
-The `delivered.Get(traceID)` check has strict error semantics:
+**Get** (`delivered.Get(traceID)`):
 - **Key found** → duplicate, ACK and skip (idempotent delivery guarantee)
 - **`nats.ErrKeyNotFound`** → key not found, proceed with send
 - **Any other error** (KV unreachable, timeout) → **no ACK, no Graph call** — JetStream redelivers
 
-This is fail-closed: if the KV store is unavailable, the message is not processed until the KV comes back. This prevents double-delivery during KV outages, at the cost of delayed delivery. The previous fail-open behavior (treating any error as "not delivered") risked duplicate sends.
+**Put** (after Graph/Test success):
+- Put **must succeed before ACK**. Put failure → **no ACK**, no attachment cleanup (redelivery needs objects).
+- Tradeoff: double-send is worse than redelivery; redelivery is safe if Get then finds the key from a partial success, or Graph may send again only if Put never landed — prefer redelivery over silent ACK without dedup key.
+
+Both paths are fail-closed: unavailable `delivered` KV delays delivery instead of risking double-send.
 
 ## Attachment Fetch Failure → No ACK
 

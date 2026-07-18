@@ -10,6 +10,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/graph-gophers/graphql-go v1.9.0
+	github.com/nats-io/nats-server/v2 v2.14.3
 	github.com/nats-io/nats.go v1.51.0
 	github.com/sony/gobreaker v1.0.0
 	golang.org/x/time v0.15.0
@@ -36,7 +37,6 @@ require (
 	github.com/minio/highwayhash v1.0.4 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/nats-io/jwt/v2 v2.8.2 // indirect
-	github.com/nats-io/nats-server/v2 v2.14.3 // indirect
 	github.com/nats-io/nkeys v0.4.16 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect

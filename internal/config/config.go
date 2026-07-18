@@ -25,6 +25,8 @@ type Config struct {
 	GraphProxyURL        string // MS_GRAPH_PROXY_URL — routes Graph calls through Dev Proxy
 	GraphMockToken       string // MS_GRAPH_MOCK_TOKEN — skips OAuth2, makes Graph credentials optional
 	AdminAuthSecret      string // DISPATCH_ADMIN_AUTH_SECRET — HMAC secret for Admin-API JWT auth
+	GatewayAuthToken     string // DISPATCH_GATEWAY_AUTH_TOKEN — Bearer token for POST /mail/send
+	GatewayAuthDisabled  bool   // DISPATCH_GATEWAY_AUTH_DISABLED=true — local dev only; skips send auth
 }
 
 func Load() (Config, error) {
@@ -58,6 +60,11 @@ func Load() (Config, error) {
 
 	adminAuthSecret := os.Getenv("DISPATCH_ADMIN_AUTH_SECRET")
 
+	// Gateway auth is enforced at mail-gateway startup (not here) so worker/admin/bounce
+	// can share Load() without requiring a send token.
+	gatewayAuthDisabled := os.Getenv("DISPATCH_GATEWAY_AUTH_DISABLED") == "true"
+	gatewayAuthToken := os.Getenv("DISPATCH_GATEWAY_AUTH_TOKEN")
+
 	bounceMailbox := os.Getenv("MS_GRAPH_BOUNCE_MAILBOX")
 	if bounceMailbox == "" {
 		bounceMailbox = envOr("MS_GRAPH_SENDER_EMAIL", "noreply@dev.local")
@@ -83,6 +90,8 @@ func Load() (Config, error) {
 		GraphProxyURL:        graphProxyURL,
 		GraphMockToken:       graphMockToken,
 		AdminAuthSecret:      adminAuthSecret,
+		GatewayAuthToken:     gatewayAuthToken,
+		GatewayAuthDisabled:  gatewayAuthDisabled,
 	}, nil
 }
 

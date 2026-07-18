@@ -7,7 +7,15 @@ meta {
 post {
   url: http://localhost:8001/dispatch/api/v1/mail/send
   body: json
-  auth: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{gatewayAuthToken}}
+}
+
+headers {
+  Authorization: Bearer {{gatewayAuthToken}}
 }
 
 body:json {

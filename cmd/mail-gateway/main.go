@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/signal"
 	"syscall"
@@ -20,11 +21,22 @@ import (
 
 var log = loggy.GetLogger("mail-gateway")
 
+var errGatewayAuthTokenRequired = errors.New(
+	"DISPATCH_GATEWAY_AUTH_TOKEN is required (or set DISPATCH_GATEWAY_AUTH_DISABLED=true for local dev only)",
+)
+
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		log.Critical("config load failed", err)
 		os.Exit(1)
+	}
+	if !cfg.GatewayAuthDisabled && cfg.GatewayAuthToken == "" {
+		log.Critical("config load failed", errGatewayAuthTokenRequired)
+		os.Exit(1)
+	}
+	if cfg.GatewayAuthDisabled {
+		log.Warn("gateway send auth disabled (DISPATCH_GATEWAY_AUTH_DISABLED=true) — local dev only")
 	}
 
 	nc, js, err := natsutil.Connect(cfg.NatsURL)

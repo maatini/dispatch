@@ -106,7 +106,7 @@ _, err = c.kv.Update(appTag, data, revision)
 All 4 `cmd/*/main.go` files follow the same pattern:
 1. `config.Load()` — load env vars
 2. `natsutil.Connect(cfg.NatsURL)` — connect to NATS
-3. `natsutil.ProvisionStreams(js)` / `ProvisionKVBuckets` / `ProvisionObjectStore` — ensure infrastructure
+3. `natsutil.Setup(js, spamTTL)` — provision streams + KV buckets; then `ProvisionObjectStore` / `ProvisionWorkerConsumer` where needed
 4. Create domain services/client with configuration
-5. Start server/consumer/ticker
+5. Start server/consumer/ticker (`httpsrv.Run` for HTTP services)
 6. `signal.NotifyContext` for graceful shutdown

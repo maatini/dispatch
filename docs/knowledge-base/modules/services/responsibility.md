@@ -34,28 +34,29 @@ The services module provides **domain services backed by NATS KV** — they enca
 
 **Entry points:**
 - `Get(appTag string) (Sender, error)` — lookup with cache; returns `ValidationError` if unknown
-- `Put(sender Sender) error` — write to KV, invalidate cache
-- `Delete(appTag string) error` — delete from KV, invalidate cache
+- `Put(sender Sender) error` — write to KV, invalidate cache entry for that appTag
+- `Delete(appTag string) error` — delete from KV, invalidate cache entry
 - `List() ([]Sender, error)` — list all senders (reads all keys from KV)
-- `InvalidateCache(appTag string)` — explicit cache invalidation
 
 **Cache behavior:**
-- TTL: 10 minutes (configurable via `cacheTTL` parameter)
-- Invalidation: automatic on `Put`/`Delete`/`InvalidateCache`
+- TTL: 10 minutes (default `DefaultCacheTTL`; overridable via `New` parameter)
+- Invalidation: automatic on `Put`/`Delete` (no separate `InvalidateCache` API)
 - Read path: check cache → miss → KV read → populate cache
+- Fields (`kv`, `cache`, …) are private; tests inject via exported `sender.KV` + `New`
 
 ### `internal/spam` (spam.Checker)
 
 **Owns:** Duplicate message detection using SHA-256 hashes in a NATS KV TTL bucket.
 
 **Entry points:**
-- `Check(hash string) error` — returns `ValidationError` if hash exists (duplicate), otherwise records hash
+- `Check(hash string) error` — atomic record via KV `Create`; returns `ValidationError` if hash already exists
 
 **Behavior:**
-1. Try to get the hash from the KV bucket
-2. If found → return `ValidationError{Code: ErrSpamDetected}` (duplicate)
-3. If not found (`ErrKeyNotFound`) → put hash in bucket → return nil (not duplicate)
-4. NATS handles TTL expiry automatically — old hashes disappear
+1. Call `kv.Create(hash, …)` (atomic check-and-set)
+2. If `nats.ErrKeyExists` → return `ValidationError{Code: ErrSpamDetected}` (duplicate)
+3. If other KV error → return `SpamStateError` (fail-closed)
+4. If create succeeds → return nil (not duplicate)
+5. NATS handles TTL expiry automatically — old hashes disappear
 
 ## Invariants
 

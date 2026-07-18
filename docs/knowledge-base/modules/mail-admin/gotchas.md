@@ -13,7 +13,7 @@ All stream queries (`mails`, `bounces`, `deadLetters`) create temporary subscrip
 - **No consumer tracking**: No durable consumer offsets — each query reads everything
 - **Termination**: `readStream` waits up to 5s per `NextMsg`, counts every consumed message (even ones that fail to unmarshal) against `StreamInfo.State.Msgs`, and honors request-context cancellation. Corrupt records are skipped, not fatal.
 
-**Note:** The admin resolver is tested via unit tests for all pure-function code paths (`matchesMailFilter`, `pageSize`, `paginate`, mapper functions at 100%) and via integration tests for the NATS-dependent stream-read paths (`Mails`, `Bounces`, `DeadLetters`). The `sender.Store` fields (`Kv`, `Cache`, `CacheTTL`) are exported to allow mock-KV-based CRUD tests without real NATS.
+**Note:** The admin resolver is tested via unit tests for all pure-function code paths (`matchesMailFilter`, `pageSize`, `paginate`, mapper functions at 100%) and via integration tests for the NATS-dependent stream-read paths (`Mails`, `Bounces`, `DeadLetters`). Sender CRUD tests inject `testkit.MockKV` through `sender.New` (`sender.KV` interface); Store fields are private.
 
 ## ReprocessDeadLetter Restores Headers From the Payload
 
@@ -22,13 +22,14 @@ The `reprocessDeadLetter` mutation parses the payload as `MailRequestDO` and rep
 - Payload has empty `traceId` → a fresh UUID is generated for the header
 - Corrupt payloads that once caused the dead letter therefore cannot be blindly requeued
 
-## JWT Auth: No Custom Claims Validation
+## JWT Auth: HMAC + Required `exp`
 
-The `AuthMiddleware` only validates that the token:
+The `AuthMiddleware` validates that the token:
 1. Is signed with HMAC (rejects RSA/ECDSA)
-2. Can be parsed with the secret
+2. Parses with `jwt.WithExpirationRequired()` — tokens **without** an `exp` claim are rejected (401)
+3. Has a non-expired `exp` (jwt/v5 `Valid()`)
 
-It does NOT check `exp` explicitly — the `jwt.Parse()` call with default parser options does this automatically via the `Valid()` method (which checks `exp`, `nbf`, `iat`).
+No other custom claims are required. Use `tools/gen-admin-token` (always sets `exp`) for local tokens.
 
 ## Sender CRUD Invalidate Cache
 

@@ -19,6 +19,7 @@ graph TD
     subgraph Infrastructure
         LOGGY[loggy]
         NATSUTIL[natsutil]
+        HTTPSRV[httpsrv]
         HASH[hash]
         PII[pii]
     end
@@ -46,7 +47,7 @@ graph TD
     MS_GRAPH --> MSGRAPH_CLIENT
     NATS_SERVER --> NATSUTIL
 
-    %% Core: everything depends on it
+    %% Core: domain services depend on domain types
     GATEWAY --> DOMAIN
     WORKER --> DOMAIN
     ADMIN --> DOMAIN
@@ -55,7 +56,6 @@ graph TD
     SENDER --> DOMAIN
     SPAM --> DOMAIN
     MSGRAPH_CLIENT --> DOMAIN
-    NATSUTIL --> DOMAIN
 
     GATEWAY --> CONFIG
     WORKER --> CONFIG
@@ -63,15 +63,13 @@ graph TD
     BOUNCE --> CONFIG
     MSGRAPH_CLIENT --> CONFIG
 
-    %% Infrastructure: used by everything
+    %% Infrastructure: logging / NATS / HTTP lifecycle
     GATEWAY --> LOGGY
     WORKER --> LOGGY
     ADMIN --> LOGGY
     BOUNCE --> LOGGY
     MSGRAPH_CLIENT --> LOGGY
-    QUOTA --> LOGGY
-    SENDER --> LOGGY
-    SPAM --> LOGGY
+    HTTPSRV --> LOGGY
 
     GATEWAY --> PII
     WORKER --> PII
@@ -83,6 +81,9 @@ graph TD
     WORKER --> NATSUTIL
     ADMIN --> NATSUTIL
     BOUNCE --> NATSUTIL
+
+    GATEWAY --> HTTPSRV
+    ADMIN --> HTTPSRV
 
     %% Services used by gateway and worker
     GATEWAY --> QUOTA

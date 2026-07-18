@@ -11,7 +11,6 @@ func (l *Loggy) With(attrs ...slog.Attr) *Loggy
 ### Field Helpers
 ```go
 func Kv(key string, value any) slog.Attr
-func Alert(v bool) slog.Attr
 ```
 
 ### Standard Log Methods
@@ -19,7 +18,6 @@ func Alert(v bool) slog.Attr
 func (l *Loggy) Info(msg string, fields ...slog.Attr)
 func (l *Loggy) Warn(msg string, fields ...slog.Attr)
 func (l *Loggy) Error(msg string, err error, fields ...slog.Attr)
-func (l *Loggy) Debug(msg string, fields ...slog.Attr)
 ```
 
 ### Category-Variant Methods (with context)
@@ -32,11 +30,6 @@ func (l *Loggy) Errorc(ctx context.Context, category LogCategory, msg string, er
 ### Semantic Methods
 ```go
 func (l *Loggy) Critical(msg string, err error, fields ...slog.Attr)
-func (l *Loggy) BusinessRuleViolation(ruleID, msg, ctx string)
-func (l *Loggy) ValidationFailed(field, reason string, value ...string)
-func (l *Loggy) MissingData(field, ctx string)
-func (l *Loggy) UncaughtException(err error, ctx string)
-func (l *Loggy) ServiceAccountExpired(accountID, ctx string)
 ```
 
 ### API Tracking
@@ -50,9 +43,8 @@ func (l *Loggy) ApiClientError(apiName string, httpStatus int, reason string)
 ### Log Categories
 ```go
 CategoryCritical, CategoryBusinessLogic, CategoryBusinessRuleViolation,
-CategoryMissingData, CategoryValidation, CategoryAPIRequest,
-CategoryAPIExternalFailure, CategoryAPIClientError, CategoryUncaughtException,
-CategorySecurity, CategoryPerformance, CategoryInfo, CategoryUnstructured
+CategoryAPIRequest, CategoryAPIExternalFailure, CategoryAPIClientError,
+CategoryInfo, CategoryDefault
 ```
 
 ## natsutil
@@ -60,6 +52,8 @@ CategorySecurity, CategoryPerformance, CategoryInfo, CategoryUnstructured
 ### Connection & Provisioning
 ```go
 func Connect(url string) (*nats.Conn, nats.JetStreamContext, error)
+// Setup = ProvisionStreams + ProvisionKVBuckets (used by all cmd/*/main.go)
+func Setup(js nats.JetStreamContext, spamTTL time.Duration) error
 func ProvisionStreams(js nats.JetStreamContext) error
 func ProvisionKVBuckets(js nats.JetStreamContext, spamTTL time.Duration) error
 func ProvisionObjectStore(js nats.JetStreamContext) (nats.ObjectStore, error)
@@ -89,6 +83,32 @@ BucketAttachments = "attachments"
 
 // Consumers
 ConsumerMailWorker = "mail-worker"
+```
+
+## httpsrv
+
+Shared HTTP server lifecycle (used by `cmd/mail-gateway` and `cmd/mail-admin`).
+
+```go
+// Run serves HTTP on addr until ctx is cancelled, then shuts down gracefully
+// (10s shutdown timeout). Listen/serve failures are returned; shutdown errors are logged.
+func Run(ctx context.Context, name, addr string, handler http.Handler) error
+```
+
+## testkit
+
+Shared in-memory NATS KV mock for unit tests (not used in production binaries).
+
+```go
+type MockKV struct {
+    Data, Revisions map[...]
+    GetErr, PutErr, CreateErr, UpdateErr, DeleteErr, KeysErr error
+    KeysList []string
+}
+
+func NewMockKV() *MockKV
+// Implements Get/Put/Create/Update/Delete/Keys with optional error injection and CAS via Revisions.
+type WrongSeqError struct{} // implements nats.JetStreamError for CAS-conflict tests
 ```
 
 ## hash

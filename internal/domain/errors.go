@@ -18,6 +18,7 @@ const (
 	ErrNatsUnavailable        ErrorCode = "NATS_UNAVAILABLE"
 	ErrMessageTooLarge        ErrorCode = "MESSAGE_TOO_LARGE"
 	ErrValidationFailed       ErrorCode = "VALIDATION_FAILED"
+	ErrUnauthorized           ErrorCode = "UNAUTHORIZED"
 	ErrInternal               ErrorCode = "INTERNAL_ERROR"
 )
 

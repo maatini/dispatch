@@ -29,6 +29,7 @@ The mail gateway is the **system ingress** — it accepts mail send requests fro
 
 | Invariant | Enforcement |
 |---|---|
+| Send endpoint requires Bearer auth | Middleware on route group; health outside; startup fails without token unless disabled |
 | Pipeline stages execute in order, never skip | `handleSend` is a single function with sequential stages |
 | Invalid requests never reach NATS | Early return on any validation error |
 | Quota errors are fail-closed | Any KV error → `QuotaStateError` → HTTP 503 |

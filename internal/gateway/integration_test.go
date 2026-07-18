@@ -70,6 +70,7 @@ func integrationHandler(t *testing.T, nc *nats.Conn, js nats.JetStreamContext) (
 		MimeWhitelist:        []string{"application/pdf"},
 		MaxTotalAttachmentMB: 20,
 		NatsPublishTimeout:   5 * time.Second,
+		GatewayAuthToken:     "itest-gateway-token",
 	}
 	h := NewHandler(cfg,
 		sender.New(sendersKV, time.Minute),
@@ -105,6 +106,7 @@ func postMail(t *testing.T, h *Handler, body map[string]any) *httptest.ResponseR
 	}
 	req := httptest.NewRequest(http.MethodPost, "/dispatch/api/v1/mail/send", bytes.NewReader(data))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer itest-gateway-token")
 	rr := httptest.NewRecorder()
 	h.Router().ServeHTTP(rr, req)
 	return rr

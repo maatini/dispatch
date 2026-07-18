@@ -125,3 +125,34 @@
 - `internal/quota/quota.go` (ungenutztes `CurrentUsage` entfernt; Interface in `gateway/handler.go` entsprechend verschlankt)
 - devbox.json/README/ARCHITECTURE.md (Skript-Namen in Hilfetext/Doku korrigiert: `dev-proxy:up`, `worker-dev`, `gateway-dev`), CLAUDE.md (Go 1.25, toter Link `coding-idioms.md` entfernt), knowledge-base synchronisiert (Interfaces, toolchain go1.26.5)
 **Ergebnis:** `go build/vet/test -race` → 241 Tests grün (−13: Tests für entfernten toten Code entfallen), `golangci-lint` 0 Issues, Integrationstests kompilieren (`-tags integration`). Datei-Korruption in README.md/CLAUDE.md/responsibility.md aus unterbrochener Session repariert (doppelte Zeilenfragmente am Dateiende).
+
+## 2026-07-18 — Doku & Knowledge-Base an Cleanup-Stand angeglichen
+
+**Begründung:** Living Docs zeigten nach dem Cleanup noch tote Pfade (`docs/architecture.md`, `coding-idioms.md`), entfernte APIs (loggy-Semantikmethoden, `CurrentUsage`, `InvalidateCache`) und widersprüchliche Testzahlen (Badge 254 vs. 241).
+**Änderungen:**
+- `CLAUDE.md` (Pointer → `ARCHITECTURE.md` + `docs/knowledge-base/`; Projektstruktur ohne tote Dateien)
+- `README.md` (Badge tests-241, konsistent mit Tabelle und `go test`)
+- `ARCHITECTURE.md` (Log-Kategorien auf aktuelle 8 Konstanten; Spam-KV 503 ergänzt)
+- `docs/knowledge-base/` (infrastructure: loggy/natsutil/`Setup`/httpsrv/testkit; services: Quota/Sender/Spam-Oberflächen + dependencies ohne loggy-Kanten + SpamStateError; shared-patterns Startup; mail-admin gotchas; architecture dependencies/components)
+**Ergebnis:** Doc-only; Verifikation: 241 Unit-Tests, Grep toter Pfade/APIs = 0 in Living Docs, alle CLAUDE/KB-Links existieren.
+
+## 2026-07-18 — P0: Send-Auth, JWT exp, delivered-Put fail-closed
+
+**Begründung:** analyse07 P0 / `umstellung-p0.md`: unauthentifiziertes Send, Admin-JWT ohne exp ewig gültig, delivered-KV-Put-Fehler nach Graph-Success → ACK → Double-Send-Risiko. Double-Send schlimmer als Redelivery.
+**Änderungen:**
+- `internal/admin/auth.go` + `auth_test.go` (`jwt.WithExpirationRequired`; Token ohne exp → 401)
+- `internal/worker/processor.go` + `processor_test.go` (Put-Fehler → kein Ack, kein Attachment-Cleanup; Test-Mode analog)
+- `internal/gateway/handler.go` + Tests (Bearer `DISPATCH_GATEWAY_AUTH_TOKEN`, Health ohne Auth); `cmd/mail-gateway` fail-closed ohne Token außer `DISPATCH_GATEWAY_AUTH_DISABLED=true`
+- `internal/config`, `domain.ErrUnauthorized`, README/Bruno/docker-compose
+**Ergebnis:** `devbox run lint` 0 Issues; `devbox run test` grün.
+**Hinweis:** **WICHTIG** / breaking: Clients brauchen `Authorization: Bearer …` am Send-Endpunkt; Admin-Tokens ohne `exp` sterben; shared Load erfordert Gateway-Token nicht (nur mail-gateway Startup).
+
+## 2026-07-18 — Cleanup: veraltete Pläne/Doku entfernt, KB an P0 angeglichen
+
+**Begründung:** Abgeschlossene Plan-/Audit-Dateien und stale Gotchas widersprachen dem Tree nach P0 (Auth, JWT exp, delivered-Put).
+**Änderungen:**
+- gelöscht: `plan07.md`, `tests07.md`, `analyse07.md`, `umstellung-p0.md`
+- `improvements.md` auf offenes Backlog (#12–#20, #14b) reduziert; `kladde.md` ohne Secret
+- KB/ARCHITECTURE: Gateway-Auth, JWT `WithExpirationRequired`, delivered-Put fail-closed
+**Ergebnis:** Doc-only; Living Docs deckungsgleich mit P0-Code.
+**Hinweis:** Historische Verweise in älteren `ai-changes`-Einträgen auf gelöschte Pläne bleiben als Audit-Trail.

@@ -105,7 +105,9 @@ func (p *Processor) processTestMode(ctx context.Context, req domain.MailRequestD
 	log.Info("test mode: skipping MS Graph call")
 	p.writeAudit(ctx, req, domain.StatusTestSuccess, "")
 	if _, err := p.delivered.Put(traceID, []byte{1}); err != nil {
-		log.Warn("delivered KV put failed", loggy.Kv("error", err.Error()))
+		// fail-closed: no Ack → redelivery; double-send is worse than redelivery
+		log.Warn("delivered KV put failed, not acking", loggy.Kv("error", err.Error()))
+		return
 	}
 	_ = msg.Ack()
 	if len(req.Attachments) > 0 {
@@ -140,7 +142,9 @@ func (p *Processor) processSend(ctx context.Context, req domain.MailRequestDO, t
 	)
 	p.writeAudit(ctx, req, domain.StatusDelivered, "")
 	if _, err := p.delivered.Put(traceID, []byte{1}); err != nil {
-		log.Warn("delivered KV put failed", loggy.Kv("error", err.Error()))
+		// fail-closed: no Ack → redelivery; double-send is worse than redelivery
+		log.Warn("delivered KV put failed, not acking", loggy.Kv("error", err.Error()))
+		return
 	}
 	_ = msg.Ack()
 	if len(req.Attachments) > 0 {

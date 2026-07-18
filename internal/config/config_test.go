@@ -20,6 +20,8 @@ func setRequiredEnv(t *testing.T) {
 	t.Setenv("MS_GRAPH_CLIENT_SECRET", "secret")
 	t.Setenv("MS_GRAPH_SENDER_EMAIL", testSenderEmail)
 	t.Setenv("DISPATCH_ADMIN_AUTH_SECRET", testAdminSecret)
+	t.Setenv("DISPATCH_GATEWAY_AUTH_TOKEN", "test-gw-token")
+	t.Setenv("DISPATCH_GATEWAY_AUTH_DISABLED", "")
 }
 
 func TestLoad_Success(t *testing.T) {
@@ -75,12 +77,57 @@ func TestLoad_AdminAuthSecretOptional(t *testing.T) {
 	}
 }
 
+func TestLoad_GatewayAuthDisabledAllowsEmptyToken(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("DISPATCH_GATEWAY_AUTH_TOKEN", "")
+	t.Setenv("DISPATCH_GATEWAY_AUTH_DISABLED", "true")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.GatewayAuthDisabled {
+		t.Error("GatewayAuthDisabled: want true")
+	}
+	if cfg.GatewayAuthToken != "" {
+		t.Errorf("GatewayAuthToken: want empty, got %q", cfg.GatewayAuthToken)
+	}
+}
+
+func TestLoad_GatewayAuthTokenLoaded(t *testing.T) {
+	setRequiredEnv(t)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf(unexpectedErr, err)
+	}
+	if cfg.GatewayAuthToken != "test-gw-token" {
+		t.Errorf("GatewayAuthToken: want test-gw-token, got %q", cfg.GatewayAuthToken)
+	}
+}
+
+func TestLoad_GatewayAuthTokenOptionalInSharedConfig(t *testing.T) {
+	// Shared Load() must not require gateway token so worker/admin/bounce start cleanly.
+	// mail-gateway enforces the token (or DISABLED) at process startup.
+	setRequiredEnv(t)
+	t.Setenv("DISPATCH_GATEWAY_AUTH_TOKEN", "")
+	t.Setenv("DISPATCH_GATEWAY_AUTH_DISABLED", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("shared Load must allow empty gateway token: %v", err)
+	}
+	if cfg.GatewayAuthToken != "" {
+		t.Errorf("GatewayAuthToken: want empty, got %q", cfg.GatewayAuthToken)
+	}
+}
+
 func TestLoad_MissingNatsURL(t *testing.T) {
 	t.Setenv("NATS_URL", "")
 	t.Setenv("MS_GRAPH_TENANT_ID", "tenant")
 	t.Setenv("MS_GRAPH_CLIENT_ID", "client")
 	t.Setenv("MS_GRAPH_CLIENT_SECRET", "secret")
 	t.Setenv("MS_GRAPH_SENDER_EMAIL", testSenderEmail)
+	t.Setenv("DISPATCH_GATEWAY_AUTH_TOKEN", "tok")
 
 	_, err := Load()
 	if err == nil {
@@ -91,6 +138,7 @@ func TestLoad_MissingNatsURL(t *testing.T) {
 func TestLoad_MissingGraphCredentials(t *testing.T) {
 	t.Setenv("NATS_URL", testNatsURL)
 	t.Setenv("DISPATCH_ADMIN_AUTH_SECRET", testAdminSecret)
+	t.Setenv("DISPATCH_GATEWAY_AUTH_TOKEN", "tok")
 	// MS_GRAPH_MOCK_TOKEN is not set → credentials are required
 
 	cases := []struct {
@@ -124,6 +172,7 @@ func TestLoad_MockTokenSkipsCredentialCheck(t *testing.T) {
 	t.Setenv("NATS_URL", testNatsURL)
 	t.Setenv("MS_GRAPH_MOCK_TOKEN", "dev-token")
 	t.Setenv("DISPATCH_ADMIN_AUTH_SECRET", testAdminSecret)
+	t.Setenv("DISPATCH_GATEWAY_AUTH_TOKEN", "tok")
 	// deliberately leave Graph credentials unset
 
 	cfg, err := Load()

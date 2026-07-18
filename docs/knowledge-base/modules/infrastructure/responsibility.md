@@ -11,24 +11,26 @@ The infrastructure module provides **shared utilities** with no domain-specific 
 **Owns:** All logging in the system. Exclusive logging facade — no other package may call `slog.*` or `fmt.Print*` directly.
 
 - Wraps `slog.Logger` with JSON output to stdout
-- 14 semantic log categories (`"type"` field): CRITICAL, BUSINESS_LOGIC, VALIDATION, API_REQUEST, SECURITY, etc.
-- API latency tracking: `RecordApiStart()` → `ExternalApiSuccess()` / `ExternalApiFailure()`
+- 8 semantic log categories (`"type"` field): CRITICAL, BUSINESS_LOGIC, BUSINESS_RULE_VIOLATION, API_REQUEST, API_EXTERNAL_FAILURE, API_CLIENT_ERROR, INFO, DEFAULT
+- API latency tracking: `RecordApiStart()` → `ExternalApiSuccess()` / `ExternalApiFailure()` / `ApiClientError()`
 - Context-enriched loggers: `loggy.With(Kv("traceId", id))` returns a new logger with additional fields
 - Package-level logger instances: `var log = loggy.GetLogger("ComponentName")`
 
 **Entry points:**
 - `loggy.GetLogger(className)` — create a new logger
-- `.Info()`, `.Warn()`, `.Error()`, `.Debug()` — standard levels
-- `.Infoc()`, `.Warnc()`, `.Errorc()`, `.Debugc()` — category-variant methods
-- `.Critical()`, `.BusinessRuleViolation()`, `.ValidationFailed()`, `.MissingData()` — semantic methods
+- `.Info()`, `.Warn()`, `.Error()` — standard levels
+- `.Infoc()`, `.Warnc()`, `.Errorc()` — category-variant methods (with `context.Context`)
+- `.Critical()` — semantic method for system-threatening errors
 - `.RecordApiStart()`, `.ExternalApiSuccess()`, `.ExternalApiFailure()`, `.ApiClientError()` — API tracking
+- `loggy.Kv(key, value)` — structured field helper
 
 ### `internal/natsutil`
 
 **Owns:** NATS connection setup, resource provisioning, and naming constants.
 
 - `Connect(url)` — establish NATS connection with reconnection config (10 retries, 2s wait)
-- `ProvisionStreams(js)` — ensure 4 streams exist (idempotent: add if missing, update if exists)
+- `Setup(js, spamTTL)` — provision streams + KV buckets (idempotent; used by all `cmd/*/main.go`)
+- `ProvisionStreams(js)` — ensure 4 streams exist (add if missing, update if exists)
 - `ProvisionKVBuckets(js, spamTTL)` — ensure 4 KV buckets exist
 - `ProvisionObjectStore(js)` — ensure attachment object store exists (72h TTL)
 - `ProvisionWorkerConsumer(js)` — ensure durable pull consumer exists
@@ -38,6 +40,21 @@ The infrastructure module provides **shared utilities** with no domain-specific 
 - Subject names: `cody.mailing.job.request.mails`, `cody.mailing.audit`, `cody.mailing.deadletter`, `cody.mailing.bounce`
 - Bucket names: `senders`, `quota`, `spam`, `delivered`, `attachments`
 - Consumer name: `mail-worker`
+
+### `internal/httpsrv`
+
+**Owns:** Shared HTTP server lifecycle for services that expose HTTP.
+
+- `Run(ctx, name, addr, handler)` — listen until context cancel, then graceful shutdown (10s timeout)
+- Used by `cmd/mail-gateway` and `cmd/mail-admin` (avoids duplicated ListenAndServe boilerplate)
+
+### `internal/testkit`
+
+**Owns:** Shared test doubles for unit tests (not linked into production binaries).
+
+- `MockKV` — in-memory NATS KV (Get/Put/Create/Update/Delete/Keys) with error injection and revision tracking for CAS tests
+- `WrongSeqError` — implements `nats.JetStreamError` for quota CAS conflict simulation
+- Used by tests in admin, quota, sender, spam, worker, etc.
 
 ### `internal/hash`
 

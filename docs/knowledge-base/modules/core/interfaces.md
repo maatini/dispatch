@@ -123,6 +123,8 @@ type Config struct {
     GraphProxyURL        string
     GraphMockToken       string
     AdminAuthSecret      string
+    GatewayAuthToken     string // DISPATCH_GATEWAY_AUTH_TOKEN (required by mail-gateway unless disabled)
+    GatewayAuthDisabled  bool   // DISPATCH_GATEWAY_AUTH_DISABLED — local/dev only
 }
 
 func Load() (Config, error)

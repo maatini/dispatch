@@ -5,10 +5,10 @@
 **What it is:** HTTP REST entrypoint for mail send requests.
 
 **Responsibilities:**
-- Accept `POST /dispatch/api/v1/mail/send` with JSON body (domain.MailRequest)
+- Accept `POST /dispatch/api/v1/mail/send` with JSON body (domain.MailRequest); Bearer auth via `DISPATCH_GATEWAY_AUTH_TOKEN`
 - Run a 7-stage validation pipeline: JSON decode → struct validation → sender lookup → domain whitelist → quota check → spam dedup → attachment upload
 - Publish `MailRequestDO` to NATS JetStream `DISPATCH_MAILS`
-- Serve `/health`, `/health/live`, `/health/ready`
+- Serve unauthenticated `/health`, `/health/live`, `/health/ready`
 
 **Key files:** `cmd/mail-gateway/main.go`, `internal/gateway/handler.go`, `internal/gateway/validation.go`, `internal/gateway/publisher.go`, `internal/gateway/attachstore.go`
 
@@ -22,9 +22,9 @@
 
 **Responsibilities:**
 - Consume from `DISPATCH_MAILS` stream (durable consumer `mail-worker`, explicit ack, 30s ack-wait)
-- Deserialize MailRequestDO → dedup check (KV `delivered`) → fetch attachments → send via MS Graph → write audit record
-- Error handling: transient errors (429/5xx) → no ACK (redelivery); permanent errors (4xx) → ACK + FAILED audit; malformed JSON → ACK + dead letter
-- Cleanup attachment objects after successful or hard-failed delivery
+- Deserialize MailRequestDO → dedup check (KV `delivered`) → fetch attachments → send via MS Graph → write audit → Put `delivered` (fail-closed) → ACK
+- Error handling: transient errors (429/5xx) → no ACK; permanent (4xx) → ACK + FAILED; Put failure after success → no ACK; malformed JSON → ACK + dead letter
+- Cleanup attachment objects only after successful `delivered` Put or on hard failure
 
 **Key files:** `cmd/mail-worker/main.go`, `internal/worker/consumer.go`, `internal/worker/processor.go`, `internal/worker/attachstore.go`
 
@@ -40,7 +40,7 @@
 - Sender CRUD: create, update, delete sender configurations in NATS KV `senders`
 - Read-only queries: audit log (`mails`), bounce records (`bounces`), dead letters (`deadLetters`) with filtering and pagination
 - Mutation: `reprocessDeadLetter` — re-publish a payload to `DISPATCH_MAILS`
-- Auth middleware: validates Bearer JWTs signed with `DISPATCH_ADMIN_AUTH_SECRET`
+- Auth middleware: Bearer JWTs (HMAC) with required non-expired `exp` (`DISPATCH_ADMIN_AUTH_SECRET`)
 
 **Key files:** `cmd/mail-admin/main.go`, `internal/admin/resolver.go`, `internal/admin/auth.go`
 
@@ -106,12 +106,14 @@
 **What it is:** Shared infrastructure packages with no domain logic.
 
 **Responsibilities:**
-- **loggy**: Structured JSON logger wrapping `slog` with 14 semantic event categories, API latency tracking, context-enriched loggers
-- **natsutil**: NATS connection/initialization helpers, stream/KV/object store provisioning, subject/consumer name constants
+- **loggy**: Structured JSON logger wrapping `slog` with 8 semantic event categories, API latency tracking, context-enriched loggers
+- **natsutil**: NATS connection, `Setup` (streams + KV), object store / worker consumer provisioning, name constants
+- **httpsrv**: Shared HTTP server lifecycle (`Run` with graceful shutdown) for gateway and admin
+- **testkit**: Shared in-memory `MockKV` for unit tests (not production)
 - **hash**: SHA-256 fingerprint computation for spam deduplication
 - **pii**: Email address masking for log safety (`user@domain.com` → `u***@domain.com`)
 
-**Key files:** `internal/loggy/loggy.go`, `internal/natsutil/setup.go`, `internal/hash/hash.go`, `internal/pii/pii.go`
+**Key files:** `internal/loggy/loggy.go`, `internal/natsutil/setup.go`, `internal/httpsrv/httpsrv.go`, `internal/testkit/testkit.go`, `internal/hash/hash.go`, `internal/pii/pii.go`
 
 **Module docs:** [modules/infrastructure/](../modules/infrastructure/index.md)
 

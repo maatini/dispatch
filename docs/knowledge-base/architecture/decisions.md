@@ -38,7 +38,7 @@ Key decisions and their rationale. Sourced from `ARCHITECTURE.md`, `CLAUDE.md`, 
 - On redelivery, the worker checks `delivered` KV — if traceID exists, it ACKs immediately without re-sending
 - 7-day TTL is safely longer than any realistic JetStream redelivery window
 
-**Enforcement:** The dedup check is mandatory in `processor.Handle()` — it runs before any external call.
+**Enforcement:** The dedup **Get** runs before any external call. After a successful send, the dedup **Put** must succeed before ACK (fail-closed: Put error → no ACK, no attachment cleanup). Double-send is worse than redelivery.
 
 ---
 

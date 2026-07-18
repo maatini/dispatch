@@ -4,9 +4,11 @@
 
 | Service | Internal Deps | Go Modules | External |
 |---|---|---|---|
-| `quota` | `domain` (QuotaError, QuotaStateError), `loggy` | `nats.go` (KV, JetStreamError) | NATS Server |
-| `sender` | `domain` (Sender, ValidationError), `loggy` | `nats.go` (KV) | NATS Server |
-| `spam` | `domain` (ValidationError, ErrorCode), `loggy` | `nats.go` (KV) | NATS Server |
+| `quota` | `domain` (QuotaError, QuotaStateError) | `nats.go` (KV, JetStreamError) | NATS Server |
+| `sender` | `domain` (Sender, ValidationError) | `nats.go` (KV) | NATS Server |
+| `spam` | `domain` (ValidationError, SpamStateError, ErrorCode) | `nats.go` (KV Create) | NATS Server |
+
+Note: `quota`, `sender`, and `spam` do **not** import `loggy`. They return typed domain errors; callers (gateway/admin) own logging.
 
 ## Used By
 
@@ -28,13 +30,10 @@ graph TD
     end
 
     QUOTA --> DOMAIN[domain]
-    QUOTA --> LOGGY[loggy]
     QUOTA --> NATS[NATS Server]
     SENDER --> DOMAIN
-    SENDER --> LOGGY
     SENDER --> NATS
     SPAM --> DOMAIN
-    SPAM --> LOGGY
     SPAM --> NATS
 
     GATEWAY[gateway] --> QUOTA

@@ -8,13 +8,17 @@ The most important rule in the entire codebase. Every log statement must go thro
 - PII masking guarantees
 - Log attribution (component name)
 
+## Prefer Setup() in Binaries
+
+`natsutil.Setup(js, spamTTL)` is the canonical entry for stream + KV provisioning. All four `cmd/*/main.go` call `Setup` then (where needed) `ProvisionObjectStore` / `ProvisionWorkerConsumer`. Prefer `Setup` over calling `ProvisionStreams` + `ProvisionKVBuckets` separately in new binaries.
+
 ## Stream Provisioning Is Idempotent but Not Atomic
 
-`ProvisionStreams()` and friends check if resources exist, then create or update. If two services start simultaneously, one's "create" may race with the other's "exists" check. In practice this is fine because:
+`Setup()` / `ProvisionStreams()` and friends check if resources exist, then create or update. If two services start simultaneously, one's "create" may race with the other's "exists" check. In practice this is fine because:
 - NATS `AddStream` for an existing stream returns an error that is ignored by `upsertStream`
 - Subsequent starts always succeed
 
-## loggy.getLogger Creates an Independent slog.Logger
+## loggy.GetLogger Creates an Independent slog.Logger
 
 Each `GetLogger("ComponentName")` creates its own `slog.Logger` with `slog.NewJSONHandler(os.Stdout, nil)` — it does NOT depend on `slog.Default()`. This means `slog.SetDefault()` is not needed and loggy instances are fully independent.
 

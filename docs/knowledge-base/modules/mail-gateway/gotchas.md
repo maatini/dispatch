@@ -1,5 +1,9 @@
 # mail-gateway: Gotchas
 
+## Gateway Auth Is Mandatory (Except Explicit Dev Disable)
+
+`POST /dispatch/api/v1/mail/send` requires `Authorization: Bearer <DISPATCH_GATEWAY_AUTH_TOKEN>` (constant-time compare). Health routes stay outside the auth group. Startup fails if the token is empty unless `DISPATCH_GATEWAY_AUTH_DISABLED=true` (local only). Shared `config.Load` does **not** require the token — only `cmd/mail-gateway` enforces it so worker/admin/bounce can start without it. AuthN is cluster-wide; per-`appTag` AuthZ is not enforced here.
+
 ## Pipeline Ordering Is Critical
 
 The 7-stage pipeline order is intentional. Do not reorder stages:

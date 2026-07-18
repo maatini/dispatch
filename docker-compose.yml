@@ -3,6 +3,8 @@ services:
     image: nats:2.10-alpine
     # WARNING: No authentication configured — for local development only.
     # Do NOT expose to untrusted networks without adding NATS auth credentials.
+    # mail-gateway: set DISPATCH_GATEWAY_AUTH_TOKEN (required unless DISPATCH_GATEWAY_AUTH_DISABLED=true).
+    # Do NOT expose the gateway publicly; Bearer token is defense-in-depth, not a substitute for network isolation.
     command: ["-js", "-m", "8222", "--name", "dispatch-dev"]
     ports:
       - "4222:4222"

@@ -36,18 +36,23 @@ cmd/
   mail-worker/      # NATS Pull-Consumer → MS Graph delivery
   mail-admin/       # GraphQL tenant/sender/audit management
   bouncemanagement/ # Scheduled NDR crawler
-internal/           # domain models, services, clients
-docs/               # architecture, ai-changes.md, coding-idioms.md
+internal/           # domain models, services, clients (incl. loggy, natsutil, httpsrv, testkit)
+docs/
+  ai-changes.md     # AI change log
+  knowledge-base/   # architecture, modules, gotchas
+ARCHITECTURE.md     # detailed pipeline (German)
+README.md           # user-facing overview + API
 ```
 
-**Read when:** Detailed pipeline, error types or resilience logic → `docs/architecture.md`
+**Read when:** Detailed pipeline, error types or resilience logic → `ARCHITECTURE.md` and `docs/knowledge-base/`
 
 ## 4. Core Domain Invariants (MUST)
 
 - `appTag` = unique Tenant identifier
 - **Quota**: rolling 24h window (TO+CC+BCC), optimistic CAS via NATS KV, **fail-closed** (any error → HTTP 503)
 - **Spam cache**: SHA-256 fingerprint, bucket TTL 60s
-- **Delivered dedup**: 7-day TTL in NATS KV (prevents double delivery)
+- **Delivered dedup**: 7-day TTL in NATS KV; Get **and** Put fail-closed (Put fail → no ACK)
+- **Gateway AuthN**: Bearer `DISPATCH_GATEWAY_AUTH_TOKEN` on `/mail/send` (health open; disable only via `DISPATCH_GATEWAY_AUTH_DISABLED` for local)
 - **Never** bypass quota check or deduplication
 
 ## 5. Coding Conventions & Go Idioms
@@ -66,7 +71,7 @@ docs/               # architecture, ai-changes.md, coding-idioms.md
 - MS Graph 4xx → ACK + FAILED entry in `DISPATCH_AUDIT`
 - Malformed JSON → ACK + entry in `DISPATCH_DEAD_LETTERS`
 
-**Read when:** Working on worker or gateway error paths → `docs/architecture.md`
+**Read when:** Working on worker or gateway error paths → `ARCHITECTURE.md` and `docs/knowledge-base/modules/mail-worker/` / `mail-gateway/`
 
 ## 7. What NOT to Do
 
@@ -87,17 +92,18 @@ docs/               # architecture, ai-changes.md, coding-idioms.md
 3. For complex tasks (> 3 steps or any uncertainty): **propose a plan first** and wait for confirmation.
 
 **At the end of longer sessions:**
-- Read the current `docs/ai-changes.md` and suggest which new insights or gotchas should be added to `CLAUDE.md` or `docs/architecture.md`.
+- Read the current `docs/ai-changes.md` and suggest which new insights or gotchas should be added to `CLAUDE.md`, `ARCHITECTURE.md`, or `docs/knowledge-base/`.
 
 Mark important design decisions in the log with `**WICHTIG**` or `**DESIGN-DECISION**`.
 
 ## 9. References & Further Reading
 
 - `docs/ai-changes.md` – complete AI change log with justifications
-- `docs/architecture.md` – full 7-stage pipeline, error table, resilience details
-- `docs/coding-idioms.md` – extended logging, error and interface examples
+- `ARCHITECTURE.md` – full 7-stage pipeline, error table, resilience details
+- `docs/knowledge-base/` – module responsibilities, interfaces, gotchas, shared patterns
+- `docs/knowledge-base/cross-cutting/shared-patterns.md` – logging, errors, interfaces idioms
 
-**Last updated:** 2026-07-17 | Version: 2.1 (added knowledge base pointer)
+**Last updated:** 2026-07-18 | Version: 2.3 (P0 invariants + stale plan cleanup)
 
 ## 10. Knowledge Base
 

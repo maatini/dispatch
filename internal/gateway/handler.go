@@ -2,10 +2,12 @@ package gateway
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -64,11 +66,40 @@ func NewHandler(cfg config.Config, senders senderLookup, quota quotaChecker, spa
 func (h *Handler) Router() http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
-	r.Post("/dispatch/api/v1/mail/send", h.handleSend)
+	// Health endpoints stay unauthenticated for probes.
 	r.Get("/health", h.handleHealth)
 	r.Get("/health/live", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	r.Get("/health/ready", h.handleHealth)
+
+	r.Group(func(pr chi.Router) {
+		if !h.cfg.GatewayAuthDisabled && h.cfg.GatewayAuthToken != "" {
+			pr.Use(h.gatewayAuth)
+		}
+		pr.Post("/dispatch/api/v1/mail/send", h.handleSend)
+	})
 	return r
+}
+
+// gatewayAuth requires Authorization: Bearer <DISPATCH_GATEWAY_AUTH_TOKEN>.
+func (h *Handler) gatewayAuth(next http.Handler) http.Handler {
+	expected := []byte(h.cfg.GatewayAuthToken)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token, ok := bearerToken(r)
+		if !ok || subtle.ConstantTimeCompare([]byte(token), expected) != 1 {
+			handlerLog.Warn("unauthorized send request",
+				loggy.Kv("method", r.Method),
+				loggy.Kv("path", r.URL.Path),
+			)
+			writeError(w, http.StatusUnauthorized, domain.ErrUnauthorized, "invalid or missing token", "")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func bearerToken(r *http.Request) (string, bool) {
+	token, found := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	return token, found && token != ""
 }
 
 func (h *Handler) handleSend(w http.ResponseWriter, r *http.Request) {

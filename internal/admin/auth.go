@@ -29,7 +29,7 @@ func AuthMiddleware(secret string) func(http.Handler) http.Handler {
 					return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
 				}
 				return []byte(secret), nil
-			})
+			}, jwt.WithExpirationRequired())
 			if err != nil {
 				writeUnauthorized(w, r)
 				return

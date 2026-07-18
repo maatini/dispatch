@@ -365,20 +365,29 @@ func TestHandle_DedupGetError_NotKeyNotFound_FailClosed(t *testing.T) {
 	}
 }
 
-func TestHandle_DedupPutError_ContinuesProcessing(t *testing.T) {
+func TestHandle_DedupPutError_NoAckNoCleanup(t *testing.T) {
 	js := &captureJS{}
 	kv := testkit.NewMockKV()
 	kv.PutErr = errors.New("KV full")
+	att := &stubAttFetcher{}
 
 	proc := &Processor{
 		graph:     &stubGraph{},
 		delivered: kv,
 		js:        js,
+		attStore:  att,
 	}
 
-	req := domain.MailRequestDO{TraceID: "trace-putfail", AppTag: "app", Sender: testSender, Recipients: []string{testRecipient}}
+	req := domain.MailRequestDO{
+		TraceID:     "trace-putfail",
+		AppTag:      "app",
+		Sender:      testSender,
+		Recipients:  []string{testRecipient},
+		Attachments: []domain.AttachmentDO{{Name: "f.pdf"}},
+	}
 	proc.Handle(context.Background(), buildMsg(req))
 
+	// Audit may still be written (observability); Ack must not happen → no cleanup
 	if len(js.records) == 0 {
 		t.Fatal("audit must be written even when delivered.Put fails")
 	}
@@ -386,6 +395,12 @@ func TestHandle_DedupPutError_ContinuesProcessing(t *testing.T) {
 	_ = json.Unmarshal(js.records[0], &audit)
 	if audit.Status != domain.StatusDelivered {
 		t.Errorf("expected DELIVERED audit, got %s", audit.Status)
+	}
+	if att.cleanedUp {
+		t.Error("delivered.Put failure must not Ack or cleanup attachments (fail-closed redelivery)")
+	}
+	if len(kv.Data) != 0 {
+		t.Error("delivered KV must stay empty when Put fails")
 	}
 }
 
@@ -403,13 +418,21 @@ func TestHandle_WriteAuditMarshalError_DoesNotPanic(t *testing.T) {
 	}
 }
 
-func TestHandle_TestMode_DeliveredPutError(t *testing.T) {
+func TestHandle_TestMode_DeliveredPutError_NoAckNoCleanup(t *testing.T) {
 	js := &captureJS{}
 	kv := testkit.NewMockKV()
 	kv.PutErr = errors.New("KV down")
-	proc := &Processor{graph: &stubGraph{}, delivered: kv, js: js}
+	att := &stubAttFetcher{}
+	proc := &Processor{graph: &stubGraph{}, delivered: kv, js: js, attStore: att}
 
-	req := domain.MailRequestDO{TraceID: "trace-test-put", Test: true, AppTag: "app", Sender: testSender, Recipients: []string{testRecipient}}
+	req := domain.MailRequestDO{
+		TraceID:     "trace-test-put",
+		Test:        true,
+		AppTag:      "app",
+		Sender:      testSender,
+		Recipients:  []string{testRecipient},
+		Attachments: []domain.AttachmentDO{{Name: "f.pdf"}},
+	}
 	proc.Handle(context.Background(), buildMsg(req))
 
 	if len(js.records) == 0 {
@@ -419,5 +442,8 @@ func TestHandle_TestMode_DeliveredPutError(t *testing.T) {
 	_ = json.Unmarshal(js.records[0], &audit)
 	if audit.Status != domain.StatusTestSuccess {
 		t.Errorf("expected TEST_SUCCESS, got %s", audit.Status)
+	}
+	if att.cleanedUp {
+		t.Error("test-mode delivered.Put failure must not Ack or cleanup attachments")
 	}
 }

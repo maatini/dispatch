@@ -4,6 +4,8 @@
 
 ### `POST /dispatch/api/v1/mail/send`
 
+**Auth:** `Authorization: Bearer <DISPATCH_GATEWAY_AUTH_TOKEN>` required (missing/wrong → 401 `UNAUTHORIZED`). Health endpoints are unauthenticated.
+
 **Request:**
 ```json
 {
@@ -28,7 +30,7 @@
 {"status": "SUCCESS", "traceId": "uuid"}
 ```
 
-**Error Response (400/413/429/503):**
+**Error Response (401/400/413/429/503):**
 ```json
 {
   "status": 400,
@@ -54,6 +56,7 @@ Same logic as `/health`: 200 UP / 503 DOWN based on real NATS connectivity
 
 | HTTP | Code | Trigger |
 |---|---|---|
+| 401 | `UNAUTHORIZED` | Missing/invalid Bearer token on `/mail/send` |
 | 400 | `UNKNOWN_APP_TAG` | appTag not found in sender KV |
 | 400 | `VALIDATION_FAILED` | Struct validation failure (missing/invalid fields) |
 | 400 | `INVALID_RECIPIENT_DOMAIN` | Domain not in sender's allowed list |
