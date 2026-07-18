@@ -1,8 +1,10 @@
 package spam
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/nats-io/nats.go"
 
@@ -20,6 +22,20 @@ type Checker struct {
 
 func NewChecker(kv nats.KeyValue) *Checker {
 	return &Checker{kv: kv}
+}
+
+// Hash computes a SHA-256 fingerprint for spam deduplication.
+// Inputs: appTag, subject, recipients, body lengths.
+func Hash(appTag, subject string, recipients []string, bodyLen, htmlLen int) string {
+	input := strings.Join([]string{
+		appTag,
+		subject,
+		strings.Join(recipients, ","),
+		fmt.Sprintf("%d", bodyLen),
+		fmt.Sprintf("%d", htmlLen),
+	}, "|")
+	sum := sha256.Sum256([]byte(input))
+	return fmt.Sprintf("%x", sum)
 }
 
 // Check returns a ValidationError if the hash was seen within the bucket TTL,

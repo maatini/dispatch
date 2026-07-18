@@ -8,6 +8,33 @@ import (
 	"dispatch/internal/testkit"
 )
 
+const (
+	hashTestAppTag = "sunshine-app"
+	hashTestEmail  = "a@b.com"
+)
+
+func TestHash(t *testing.T) {
+	h1 := Hash(hashTestAppTag, "Hello", []string{hashTestEmail}, 100, 0)
+	h2 := Hash(hashTestAppTag, "Hello", []string{hashTestEmail}, 100, 0)
+	if h1 != h2 {
+		t.Error("identical inputs must produce identical hash")
+	}
+
+	h3 := Hash(hashTestAppTag, "Hello", []string{hashTestEmail}, 101, 0)
+	if h1 == h3 {
+		t.Error("different body length must produce different hash")
+	}
+
+	h4 := Hash("other-tag", "Hello", []string{hashTestEmail}, 100, 0)
+	if h1 == h4 {
+		t.Error("different appTag must produce different hash")
+	}
+
+	if len(h1) != 64 {
+		t.Errorf("expected 64-char hex SHA-256, got %d chars", len(h1))
+	}
+}
+
 func TestCheck_FirstSeen(t *testing.T) {
 	c := &Checker{kv: testkit.NewMockKV()}
 	if err := c.Check("abc123"); err != nil {

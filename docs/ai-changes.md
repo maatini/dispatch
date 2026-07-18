@@ -168,3 +168,13 @@
 - Living Docs: `improvements.md` #13 → Umgesetzt; ARCHITECTURE/KB/README/CLAUDE
 **Ergebnis:** `devbox run lint && devbox run test` → grün.
 **Hinweis:** **DESIGN-DECISION** Dedup vor MaxDeliver-Gate; **WICHTIG** Worker-Restart nötig damit bestehende Cluster UpdateConsumer mit 5m/8 bekommen.
+
+## 2026-07-18 — Vereinfachung: Mikro-Packages + KB-Verdichtung
+
+**Begründung:** Go-Code war schlank; Komplexität vor allem in 8×5 KB-Dateien und 1-Funktion-Packages (`hash`, `pii`). Invarianten unangetastet.
+**Änderungen:**
+- `spam.Hash` (ex `hash.SpamHash`); `loggy.MaskEmail` (ex `pii`); Packages `internal/hash`, `internal/pii` entfernt
+- `docs/knowledge-base/`: Module je 1 Datei; `architecture/*` Diagramme → nur noch Root-`ARCHITECTURE.md`; ~2,9k → ~0,5k Zeilen KB
+- CLAUDE/README/devbox mutate/skills an neue Pfade angepasst
+**Ergebnis:** `devbox run lint` 0 Issues; `devbox run test` grün.
+**Hinweis:** Keine Verhaltensänderung an HTTP/NATS/Graph.

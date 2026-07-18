@@ -16,9 +16,8 @@ import (
 
 	"dispatch/internal/config"
 	"dispatch/internal/domain"
-	"dispatch/internal/hash"
 	"dispatch/internal/loggy"
-	"dispatch/internal/pii"
+	"dispatch/internal/spam"
 )
 
 var handlerLog = loggy.GetLogger("Handler")
@@ -138,7 +137,7 @@ func (h *Handler) handleSend(w http.ResponseWriter, r *http.Request) {
 		for _, addr := range allRecips {
 			handlerLog.Warnc(ctx, loggy.CategoryBusinessRuleViolation, "domain not whitelisted",
 				loggy.Kv("traceId", traceID),
-				loggy.Kv("recipient", pii.MaskEmail(addr)),
+				loggy.Kv("recipient", loggy.MaskEmail(addr)),
 				loggy.Kv("appTag", req.AppTag),
 			)
 		}
@@ -154,7 +153,7 @@ func (h *Handler) handleSend(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Stage 5: spam
-	spamHash := hash.SpamHash(req.AppTag, req.Subject, req.Recipients, len(req.BodyContent), len(req.HtmlBodyContent))
+	spamHash := spam.Hash(req.AppTag, req.Subject, req.Recipients, len(req.BodyContent), len(req.HtmlBodyContent))
 	if err := h.spam.Check(spamHash); err != nil {
 		var se *domain.SpamStateError
 		if errors.As(err, &se) {

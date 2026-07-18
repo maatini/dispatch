@@ -41,7 +41,7 @@ Reliable, scalable, multi-tenant email delivery with:
 - **Zero double-delivery (@tag:zero-double-delivery)**: Idempotency via NATS KV `delivered` bucket (7-day TTL)
 - **Consumer-side interfaces (@tag:consumer-side-interfaces)**: Go interfaces defined at point of use, never at definition
 - **Exclusive logging (@tag:exclusive-loggy)**: All logs via `internal/loggy` — never `slog.*` or `fmt.Println` directly
-- **PII masking (@tag:pii-mask-always)**: All email addresses in logs masked via `pii.MaskEmail()`
+- **PII masking (@tag:pii-mask-always)**: All email addresses in logs masked via `loggy.MaskEmail()`
 - **Context-first params (@tag:context-first)**: `context.Context` as first parameter for all I/O/blocking functions; never stored in structs
 
-See [architecture/decisions.md](architecture/decisions.md) for the rationale behind these choices.
+See [decisions.md](decisions.md) for the rationale behind these choices. Pipeline diagrams: root `ARCHITECTURE.md`.

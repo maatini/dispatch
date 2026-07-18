@@ -10,8 +10,7 @@ The packages under test are:
 - `./internal/quota`
 - `./internal/spam`
 - `./internal/worker`
-- `./internal/pii`
-- `./internal/hash`
+- `./internal/loggy`
 
 If args were passed (e.g. `/mutate ./internal/quota`), run only that package instead.
 

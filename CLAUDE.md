@@ -61,7 +61,7 @@ README.md           # user-facing overview + API
 - Interfaces: define at point of **use** (consumer), never at definition (producer)
 - Context: first parameter for every I/O or blocking function. Never store in structs.
 - Logging: **exclusively** `loggy.GetLogger("ComponentName")` + semantic methods (`Info`, `Warnc`, `Critical`, `RecordApiStart` etc.)
-- PII: always mask with `pii.MaskEmail(addr)`
+- PII: always mask with `loggy.MaskEmail(addr)`
 - No `init()` functions, no global mutable state, no `context.Background()` deep in call stack
 
 ## 6. Error Handling & Resilience
@@ -72,7 +72,7 @@ README.md           # user-facing overview + API
 - MS Graph 4xx → ACK + FAILED entry in `DISPATCH_AUDIT`
 - Malformed JSON → ACK + entry in `DISPATCH_DEAD_LETTERS`
 
-**Read when:** Working on worker or gateway error paths → `ARCHITECTURE.md` and `docs/knowledge-base/modules/mail-worker/` / `mail-gateway/`
+**Read when:** Working on worker or gateway error paths → `ARCHITECTURE.md` and `docs/knowledge-base/modules/mail-worker.md` / `mail-gateway.md`
 
 ## 7. What NOT to Do
 
@@ -101,20 +101,18 @@ Mark important design decisions in the log with `**WICHTIG**` or `**DESIGN-DECIS
 
 - `docs/ai-changes.md` – complete AI change log with justifications
 - `ARCHITECTURE.md` – full 7-stage pipeline, error table, resilience details
-- `docs/knowledge-base/` – module responsibilities, interfaces, gotchas, shared patterns
+- `docs/knowledge-base/` – condensed modules + ADRs; diagrams live in `ARCHITECTURE.md`
 - `docs/knowledge-base/cross-cutting/shared-patterns.md` – logging, errors, interfaces idioms
 
-**Last updated:** 2026-07-18 | Version: 2.3 (P0 invariants + stale plan cleanup)
+**Last updated:** 2026-07-18 | Version: 2.4 (KB compress + micro-package fold)
 
 ## 10. Knowledge Base
 
-For architecture, responsibilities, and dependencies consult `docs/knowledge-base/` first.
-Always start with the relevant `index.md` file for the module you're working on.
+For architecture and gotchas consult `docs/knowledge-base/` first (`index.md`).
+Pipeline diagrams and NATS ownership tables: root `ARCHITECTURE.md` only.
 
 Key starting points:
 - `docs/knowledge-base/overview.md` — project purpose and tech stack
-- `docs/knowledge-base/architecture/dependencies.md` — who depends on what (Mermaid graph)
-- `docs/knowledge-base/architecture/data-flows.md` — sequence diagrams for send mail + bounce detection
-- `docs/knowledge-base/modules/<module>/responsibility.md` — what each module owns
-- `docs/knowledge-base/modules/<module>/gotchas.md` — pitfalls and edge cases
-- `docs/knowledge-base/cross-cutting/tags.md` — registry of @tag:xxx used throughout the codebase
+- `docs/knowledge-base/decisions.md` — stable architectural decisions
+- `docs/knowledge-base/modules/<module>.md` — one file per module (responsibility + gotchas)
+- `docs/knowledge-base/cross-cutting/tags.md` — registry of @tag:xxx

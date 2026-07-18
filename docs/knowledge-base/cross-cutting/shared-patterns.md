@@ -62,11 +62,11 @@ defer stop()
 
 ## PII Masking in Logs
 
-Every log statement that includes an email address must use `pii.MaskEmail()`:
+Every log statement that includes an email address must use `loggy.MaskEmail()`:
 
 ```go
 handlerLog.Warnc(ctx, loggy.CategoryBusinessRuleViolation, "domain not whitelisted",
-    loggy.Kv("recipient", pii.MaskEmail(addr)),
+    loggy.Kv("recipient", loggy.MaskEmail(addr)),
 )
 ```
 

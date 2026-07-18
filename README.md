@@ -183,17 +183,15 @@ devbox run sonar             # Coverage erzeugen + SonarQube-Scan
 | `internal/config` | 98 % | |
 | `internal/domain` | 75 % | |
 | `internal/gateway` | 78 % | `AttachmentStore.Upload` nur via Integration |
-| `internal/hash` | 100 % | |
-| `internal/loggy` | 100 % | |
+| `internal/loggy` | 100 % | inkl. `MaskEmail` |
 | `internal/msgraph` | 92 % | `Service.SendEmail` nur via Integration |
 | `internal/natsutil` | 83 % | Embedded nats-server Tests, keine externen Dienste |
-| `internal/pii` | 100 % | |
 | `internal/quota` | 89 % | |
 | `internal/sender` | 92 % | |
-| `internal/spam` | 83 % | |
+| `internal/spam` | 100 % | inkl. `Hash` (ehem. `internal/hash`) |
 | `internal/worker` | 77 % | Consumer/AttachStore nur via Integration |
 
-Mutation-Tests laufen mit [gremlins](https://github.com/go-gremlins/gremlins) (`go tool gremlins unleash`) auf den Packages `internal/gateway`, `internal/quota`, `internal/spam`, `internal/worker`, `internal/pii`, `internal/hash`, `internal/msgraph`, `internal/sender`, `internal/natsutil`, `internal/admin` und `internal/bounce`. Die Schwellwerte sind in [`.gremlins.yaml`](.gremlins.yaml) hinterlegt.
+Mutation-Tests laufen mit [gremlins](https://github.com/go-gremlins/gremlins) (`go tool gremlins unleash`) auf den Packages `internal/gateway`, `internal/quota`, `internal/spam`, `internal/worker`, `internal/loggy`, `internal/msgraph`, `internal/sender`, `internal/natsutil`, `internal/admin` und `internal/bounce`. Die Schwellwerte sind in [`.gremlins.yaml`](.gremlins.yaml) hinterlegt.
 
 Statische Code-Analyse via [SonarQube](http://10.27.27.202:9000/dashboard?id=dispatch). Token wird aus `.env` geladen (`SONAR_TOKEN=sqp_...`), nie im Repository gespeichert.
 

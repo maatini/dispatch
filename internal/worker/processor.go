@@ -13,7 +13,6 @@ import (
 	"dispatch/internal/loggy"
 	"dispatch/internal/msgraph"
 	"dispatch/internal/natsutil"
-	"dispatch/internal/pii"
 )
 
 type emailSender interface {
@@ -225,14 +224,14 @@ func (p *Processor) processSend(ctx context.Context, req domain.MailRequestDO, t
 		var transient *msgraph.GraphTransientError
 		if errors.As(err, &transient) {
 			log.Warnc(ctx, loggy.CategoryAPIExternalFailure, "transient graph error, not acking",
-				loggy.Kv("sender", pii.MaskEmail(req.Sender)),
+				loggy.Kv("sender", loggy.MaskEmail(req.Sender)),
 				loggy.Kv("error", err.Error()),
 			)
 			// no ack → JetStream redelivers; keep objects in store for next attempt
 			return
 		}
 		log.Errorc(ctx, loggy.CategoryAPIClientError, "permanent graph error, acking with FAILED", err,
-			loggy.Kv("sender", pii.MaskEmail(req.Sender)),
+			loggy.Kv("sender", loggy.MaskEmail(req.Sender)),
 		)
 		p.writeAudit(ctx, req, domain.StatusFailed, err.Error())
 		_ = msg.Ack()
@@ -243,7 +242,7 @@ func (p *Processor) processSend(ctx context.Context, req domain.MailRequestDO, t
 	}
 	log.Infoc(ctx, loggy.CategoryBusinessLogic, "mail delivered",
 		loggy.Kv("appTag", req.AppTag),
-		loggy.Kv("sender", pii.MaskEmail(req.Sender)),
+		loggy.Kv("sender", loggy.MaskEmail(req.Sender)),
 	)
 	p.writeAudit(ctx, req, domain.StatusDelivered, "")
 	if _, err := p.delivered.Put(traceID, []byte{1}); err != nil {

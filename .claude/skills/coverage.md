@@ -12,7 +12,7 @@ Run coverage analysis for the dispatch project:
    ```
 2. Parse the per-function output. Group by package.
 3. Compute per-package statement coverage (average of all functions in the package).
-4. The threshold is **80%** for core packages: `internal/gateway`, `internal/quota`, `internal/spam`, `internal/worker`, `internal/pii`, `internal/hash`, `internal/config`, `internal/sender`.
+4. The threshold is **80%** for core packages: `internal/gateway`, `internal/quota`, `internal/spam`, `internal/worker`, `internal/loggy`, `internal/config`, `internal/sender`.
 
 Report two sections:
 

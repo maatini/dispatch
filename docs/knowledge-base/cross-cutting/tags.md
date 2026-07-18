@@ -9,7 +9,7 @@ All `@tag:xxx` references used in this knowledge base, with one-line meanings.
 | `@tag:zero-double-delivery` | Idempotency via `delivered` KV bucket ensures each message is delivered at most once |
 | `@tag:consumer-side-interfaces` | Go interfaces defined at point of use (consumer), not at definition (producer) |
 | `@tag:exclusive-loggy` | All logging via `internal/loggy` — never `slog.*` or `fmt.Println` directly |
-| `@tag:pii-mask-always` | All email addresses in logs must be masked via `pii.MaskEmail()` |
+| `@tag:pii-mask-always` | All email addresses in logs must be masked via `loggy.MaskEmail()` |
 | `@tag:context-first` | `context.Context` as first parameter for all I/O/blocking functions; never stored in structs |
 | `@tag:dedup` | Deduplication via SHA-256 spam hash (gateway) + traceID in `delivered` KV (worker) |
 | `@tag:optimistic-cas` | Quota enforcement uses optimistic concurrency via NATS KV revision numbers |
