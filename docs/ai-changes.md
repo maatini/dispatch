@@ -208,3 +208,11 @@
 - `.grok/rules/00-dispatch.md` (plan-first paths, tools, git, continuity)
 **Ergebnis:** Doc-only.
 **Hinweis:** Canonical remains `CLAUDE.md`; this file does not duplicate MUST invariants.
+
+## 2026-07-18 — Release v0.6.0
+
+**Begründung:** Erste GitHub-Version nach Code-Stand 0.5.0; Bündelung von P0-Auth, Worker-Reliability, Audit-Fixes und Tests.
+**Änderungen:**
+- `internal/version/version.go`, `Dockerfile`, `.github/workflows/build.yml` (`0.5.0` → `0.6.0`)
+- GitHub Release `v0.6.0` mit Release Notes
+**Ergebnis:** Version-Bump; Release über `gh release create`.

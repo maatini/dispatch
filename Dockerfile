@@ -6,7 +6,7 @@
 #   docker build --build-arg SERVICE=bouncemanagement -t dispatch/bouncemanagement .
 
 ARG SERVICE=mail-gateway
-ARG VERSION=0.5.0
+ARG VERSION=0.6.0
 
 # ── Builder ───────────────────────────────────────────────────────────────────
 FROM golang:1.26-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS builder
