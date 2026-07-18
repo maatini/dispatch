@@ -38,4 +38,6 @@ The hash input format is `appTag|subject|recip1,recip2|bodyLen|htmlLen`. The rec
 
 ## Durable Consumer Must Be Provisioned Before Worker Starts
 
-`ProvisionWorkerConsumer()` creates the `mail-worker` durable consumer on the `DISPATCH_MAILS` stream. If the worker starts before this is called, `PullSubscribe` will fail because the consumer doesn't exist. The `main.go` files handle this by calling provisioning before starting the consumer.
+`ProvisionWorkerConsumer(js, ackWait, maxDeliver)` creates **or updates** the `mail-worker` durable consumer on the `DISPATCH_MAILS` stream (defaults: AckWait 5m, MaxDeliver 8). If the worker starts before this is called, `PullSubscribe` will fail because the consumer doesn't exist. The `main.go` files handle this by calling provisioning before starting the consumer.
+
+**Update path matters:** older clusters may still have AckWait 30s / MaxDeliver -1 until a worker restart runs UpdateConsumer. Do not treat provision as create-only.

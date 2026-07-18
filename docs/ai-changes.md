@@ -156,3 +156,15 @@
 - KB/ARCHITECTURE: Gateway-Auth, JWT `WithExpirationRequired`, delivered-Put fail-closed
 **Ergebnis:** Doc-only; Living Docs deckungsgleich mit P0-Code.
 **Hinweis:** Historische Verweise in älteren `ai-changes`-Einträgen auf gelöschte Pläne bleiben als Audit-Trail.
+
+## 2026-07-18 — #13 Worker AckWait 5m / MaxDeliver 8 / InProgress
+
+**Begründung:** Redelivery-Races bei langer Graph/Attachment-Arbeit (AckWait 30s ohne Heartbeat) und Poison-Loops (`MaxDeliver: -1`) schließen; Zero-Double-Delivery und fail-closed bleiben.
+**Änderungen:**
+- `internal/config` (`WorkerAckWait`/`WorkerMaxDeliver`; Env invalid/≤0 bzw. MaxDeliver&lt;1 → Defaults 5m/8; infinite verboten)
+- `internal/natsutil.ProvisionWorkerConsumer(js, ackWait, maxDeliver)` create **+ UpdateConsumer** reconcile
+- `internal/worker.Processor` InProgress-Heartbeat; MaxDeliver-Gate nach Dedup Get → DLQ+FAILED+Term; `cmd/mail-worker` wired
+- Tests: config env, consumer create/update, MaxDeliver boundary + dedup-wins; integration MaxDeliver→DLQ
+- Living Docs: `improvements.md` #13 → Umgesetzt; ARCHITECTURE/KB/README/CLAUDE
+**Ergebnis:** `devbox run lint && devbox run test` → grün.
+**Hinweis:** **DESIGN-DECISION** Dedup vor MaxDeliver-Gate; **WICHTIG** Worker-Restart nötig damit bestehende Cluster UpdateConsumer mit 5m/8 bekommen.

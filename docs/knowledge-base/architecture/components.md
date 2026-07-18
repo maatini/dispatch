@@ -21,9 +21,10 @@
 **What it is:** NATS JetStream pull consumer that delivers emails via MS Graph.
 
 **Responsibilities:**
-- Consume from `DISPATCH_MAILS` stream (durable consumer `mail-worker`, explicit ack, 30s ack-wait)
-- Deserialize MailRequestDO → dedup check (KV `delivered`) → fetch attachments → send via MS Graph → write audit → Put `delivered` (fail-closed) → ACK
-- Error handling: transient errors (429/5xx) → no ACK; permanent (4xx) → ACK + FAILED; Put failure after success → no ACK; malformed JSON → ACK + dead letter
+- Consume from `DISPATCH_MAILS` stream (durable consumer `mail-worker`, explicit ack, AckWait 5m, MaxDeliver 8; upsert on start)
+- InProgress heartbeat (AckWait/3, min 10s) while handling so long Graph work does not redeliver mid-flight
+- Deserialize MailRequestDO → dedup check (KV `delivered`) → MaxDeliver gate → fetch attachments → send via MS Graph → write audit → Put `delivered` (fail-closed) → ACK
+- Error handling: transient (429/5xx) → no ACK; permanent (4xx) → ACK + FAILED; MaxDeliver exhaustion → DLQ + FAILED + Term (no Graph); Put failure after success → no ACK; malformed JSON → ACK + dead letter
 - Cleanup attachment objects only after successful `delivered` Put or on hard failure
 
 **Key files:** `cmd/mail-worker/main.go`, `internal/worker/consumer.go`, `internal/worker/processor.go`, `internal/worker/attachstore.go`

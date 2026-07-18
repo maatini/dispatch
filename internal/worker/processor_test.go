@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/nats-io/nats.go"
 
@@ -446,4 +448,204 @@ func TestHandle_TestMode_DeliveredPutError_NoAckNoCleanup(t *testing.T) {
 	if att.cleanedUp {
 		t.Error("test-mode delivered.Put failure must not Ack or cleanup attachments")
 	}
+}
+
+func TestShouldTerminateMaxDeliver(t *testing.T) {
+	cases := []struct {
+		name         string
+		numDelivered uint64
+		maxDeliver   int
+		want         bool
+	}{
+		{"below limit", 7, 8, false},
+		{"at limit", 8, 8, true},
+		{"above limit", 9, 8, true},
+		{"first delivery never terminates at max 8", 1, 8, false},
+		{"maxDeliver zero disables gate", 100, 0, false},
+		{"maxDeliver negative disables gate", 100, -1, false},
+		{"maxDeliver one terminates on first", 1, 1, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := shouldTerminateMaxDeliver(tc.numDelivered, tc.maxDeliver)
+			if got != tc.want {
+				t.Errorf("shouldTerminateMaxDeliver(%d, %d)=%v, want %v",
+					tc.numDelivered, tc.maxDeliver, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestInProgressInterval(t *testing.T) {
+	if got := inProgressInterval(5 * time.Minute); got != 100*time.Second {
+		t.Errorf("5m/3: want 100s, got %v", got)
+	}
+	// floor at 10s
+	if got := inProgressInterval(15 * time.Second); got != minInProgressInterval {
+		t.Errorf("15s/3=5s floored: want %v, got %v", minInProgressInterval, got)
+	}
+	if got := inProgressInterval(60 * time.Second); got != 20*time.Second {
+		t.Errorf("60s/3: want 20s, got %v", got)
+	}
+}
+
+func TestHandle_MaxDeliverExhausted_DLQNoGraph(t *testing.T) {
+	js := &captureJS{}
+	kv := testkit.NewMockKV()
+	graphCalled := false
+	termCalled := false
+	att := &stubAttFetcher{}
+
+	proc := &Processor{
+		graph:      &callCheckGraph{onCall: func() { graphCalled = true }},
+		delivered:  kv,
+		js:         js,
+		attStore:   att,
+		maxDeliver: 3,
+		deliveryCountFn: func(_ *nats.Msg) (uint64, bool) {
+			return 3, true
+		},
+		termFn: func(_ *nats.Msg) error {
+			termCalled = true
+			return nil
+		},
+	}
+
+	req := domain.MailRequestDO{
+		TraceID:     "trace-maxd",
+		AppTag:      "app",
+		Sender:      testSender,
+		Recipients:  []string{testRecipient},
+		Attachments: []domain.AttachmentDO{{Name: "f.pdf", ObjectKey: "k1"}},
+	}
+	proc.Handle(context.Background(), buildMsg(req))
+
+	if graphCalled {
+		t.Error("MaxDeliver exhaustion must not call MS Graph")
+	}
+	if !termCalled {
+		t.Error("MaxDeliver exhaustion must call Term (terminal stop)")
+	}
+	if !att.cleanedUp {
+		t.Error("MaxDeliver exhaustion should best-effort cleanup attachment keys")
+	}
+	if len(js.records) < 2 {
+		t.Fatalf("expected dead letter + FAILED audit, got %d records", len(js.records))
+	}
+	// records: dead letter and audit (order: DLQ then FAILED audit)
+	var foundDL, foundFailed bool
+	for _, rec := range js.records {
+		var dl domain.DeadLetter
+		if err := json.Unmarshal(rec, &dl); err == nil && dl.Error != "" && dl.Payload != "" {
+			if !containsSubstring(dl.Error, "max deliver exceeded") {
+				t.Errorf("dead letter error must mention max deliver, got %q", dl.Error)
+			}
+			foundDL = true
+			continue
+		}
+		var audit domain.AuditRecord
+		if err := json.Unmarshal(rec, &audit); err == nil && audit.Status != "" {
+			if audit.Status != domain.StatusFailed {
+				t.Errorf("audit status: want FAILED, got %s", audit.Status)
+			}
+			if !containsSubstring(audit.Error, "max deliver exceeded") {
+				t.Errorf("audit error must mention max deliver, got %q", audit.Error)
+			}
+			foundFailed = true
+		}
+	}
+	if !foundDL {
+		t.Error("expected dead letter with max deliver error")
+	}
+	if !foundFailed {
+		t.Error("expected FAILED audit on max deliver exhaustion")
+	}
+	if len(kv.Data) != 0 {
+		t.Error("delivered KV must stay empty on max-deliver path")
+	}
+}
+
+func TestHandle_MaxDeliver_DedupWinsBeforeGate(t *testing.T) {
+	// Already delivered at high NumDelivered → Ack-skip, no FAILED/DLQ, no Graph
+	js := &captureJS{}
+	kv := testkit.NewMockKV()
+	kv.Data["trace-dedup-maxd"] = []byte{1}
+	graphCalled := false
+	termCalled := false
+
+	proc := &Processor{
+		graph:      &callCheckGraph{onCall: func() { graphCalled = true }},
+		delivered:  kv,
+		js:         js,
+		maxDeliver: 3,
+		deliveryCountFn: func(_ *nats.Msg) (uint64, bool) {
+			return 99, true
+		},
+		termFn: func(_ *nats.Msg) error {
+			termCalled = true
+			return nil
+		},
+	}
+
+	req := domain.MailRequestDO{TraceID: "trace-dedup-maxd", AppTag: "app", Sender: testSender, Recipients: []string{testRecipient}}
+	proc.Handle(context.Background(), buildMsg(req))
+
+	if graphCalled {
+		t.Error("dedup hit must not call Graph even at high NumDelivered")
+	}
+	if termCalled {
+		t.Error("dedup hit must not Term (Ack-skip path)")
+	}
+	if len(js.records) != 0 {
+		t.Error("dedup hit must not write FAILED audit or DLQ")
+	}
+}
+
+func TestHandle_MaxDeliver_BelowLimit_ProceedsToGraph(t *testing.T) {
+	js := &captureJS{}
+	kv := testkit.NewMockKV()
+	graphCalled := false
+
+	proc := &Processor{
+		graph:      &callCheckGraph{onCall: func() { graphCalled = true }},
+		delivered:  kv,
+		js:         js,
+		maxDeliver: 8,
+		deliveryCountFn: func(_ *nats.Msg) (uint64, bool) {
+			return 7, true // N-1: still allowed
+		},
+	}
+
+	// callCheckGraph returns error — still proves Graph was reached (gate did not fire)
+	req := domain.MailRequestDO{TraceID: "trace-below", AppTag: "app", Sender: testSender, Recipients: []string{testRecipient}}
+	proc.Handle(context.Background(), buildMsg(req))
+
+	if !graphCalled {
+		t.Error("NumDelivered < MaxDeliver must proceed to Graph")
+	}
+}
+
+func TestHandle_MaxDeliver_MetadataUnavailable_SkipsGate(t *testing.T) {
+	// Plain unit-test msgs: no JetStream metadata → gate skipped (fail-soft)
+	js := &captureJS{}
+	kv := testkit.NewMockKV()
+	graphCalled := false
+	proc := &Processor{
+		graph:      &callCheckGraph{onCall: func() { graphCalled = true }},
+		delivered:  kv,
+		js:         js,
+		maxDeliver: 1, // would terminate if count available
+		// deliveryCountFn nil → deliveryCount on plain msg → ok=false
+	}
+
+	req := domain.MailRequestDO{TraceID: "trace-nometa", AppTag: "app", Sender: testSender, Recipients: []string{testRecipient}}
+	proc.Handle(context.Background(), buildMsg(req))
+
+	if !graphCalled {
+		t.Error("when metadata unavailable, MaxDeliver gate must skip so unit tests still exercise Graph path")
+	}
+}
+
+func containsSubstring(s, sub string) bool {
+	return strings.Contains(s, sub)
 }

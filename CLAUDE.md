@@ -67,7 +67,8 @@ README.md           # user-facing overview + API
 ## 6. Error Handling & Resilience
 
 - Quota / NATS publish / Attachment upload errors → HTTP 503 (fail-closed)
-- MS Graph 429/5xx → **no ACK** (JetStream redelivers, respect Retry-After ≤ 30s)
+- MS Graph 429/5xx → **no ACK** (JetStream redelivers, respect Retry-After ≤ 30s); worker InProgress heartbeat (AckWait 5m default)
+- MaxDeliver exhausted (default 8) → DLQ + FAILED + Term, no Graph; Dedup Get before MaxDeliver gate
 - MS Graph 4xx → ACK + FAILED entry in `DISPATCH_AUDIT`
 - Malformed JSON → ACK + entry in `DISPATCH_DEAD_LETTERS`
 

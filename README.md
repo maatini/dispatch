@@ -29,17 +29,18 @@ Client
            ↳ Erfolg → HTTP 202
 
   NATS JetStream
-  └── mail-worker (durable Pull-Consumer)
+  └── mail-worker (durable Pull-Consumer; AckWait 5m, MaxDeliver 8, InProgress)
         1. JSON-Deserialisierung (→ DISPATCH_DEAD_LETTERS bei Fehler)
-        2. Dedup via NATS KV delivered (7-Tage-TTL)
-        3. Anhänge aus NATS Object Store laden
+        2. Dedup via NATS KV delivered (7-Tage-TTL; vor MaxDeliver-Gate)
+        3. MaxDeliver-Gate → DLQ + FAILED + Term (kein Graph)
+        4. Anhänge aus NATS Object Store laden
            ↳ Fehler → kein ACK (Redelivery)
-        4. Test-Modus: Audit-Eintrag ohne MS-Graph-Call
-        5. sendMail / Upload-Session via MS Graph API
-           ↳ 429/5xx → kein ACK, JetStream redelivert
+        5. Test-Modus: Audit-Eintrag ohne MS-Graph-Call
+        6. sendMail / Upload-Session via MS Graph API
+           ↳ 429/5xx → kein ACK, JetStream redelivert (InProgress hält AckWait)
                         Retry-After-Header wird ausgewertet (max 30 s)
            ↳ 4xx      → ACK + FAILED in DISPATCH_AUDIT
-           ↳ Erfolg   → ACK + DELIVERED in DISPATCH_AUDIT + Object Store cleanup
+           ↳ Erfolg   → Put delivered + ACK + DELIVERED audit + Object Store cleanup
 
   mail-admin    → GraphQL-API: Sender-Verwaltung, Audit-Log, Dead-Letters
   bouncemanagement → MS-Graph-Poller (alle 15 min) → DISPATCH_BOUNCES
@@ -100,6 +101,8 @@ DISPATCH_VALIDATION_MIME_WHITELIST=application/pdf,image/jpeg,image/png,...
 DISPATCH_MAX_TOTAL_ATTACHMENT_SIZE_MB=20
 DISPATCH_NATS_PUBLISH_TIMEOUT_SECONDS=5
 DISPATCH_GRAPH_RATE_LIMITER_SKIP_SLEEP=false
+DISPATCH_WORKER_ACK_WAIT_SECONDS=300   # mail-worker JetStream AckWait (default 5m)
+DISPATCH_WORKER_MAX_DELIVER=8          # finite redelivery; -1/0 invalid → default 8
 ```
 
 ## Lokale Entwicklung
@@ -283,7 +286,8 @@ query {
 | NATS beim Publish nicht erreichbar | HTTP 503, kein Retry im Gateway |
 | Quota KV-Fehler | HTTP 503 (fail-closed, niemals bypass) |
 | Attachment-Upload fehlgeschlagen | HTTP 503, kein Retry im Gateway |
-| MS Graph 429 / 5xx | Kein NATS-ACK, JetStream redelivert; `Retry-After`-Header wird ausgewertet (max 30 s) |
+| MS Graph 429 / 5xx | Kein NATS-ACK, JetStream redelivert; InProgress hält AckWait (default 5m); `Retry-After` max 30 s |
+| MaxDeliver erschöpft (default 8) | DLQ + FAILED Audit + Term; kein Graph; Dedup vor MaxDeliver-Gate |
 | MS Graph 4xx (außer 429) | ACK, FAILED in Audit |
 | JSON-Parse-Fehler im Worker | ACK, Dead-Letter-Stream |
 | Worker-Absturz nach Graph-Erfolg | Dedup via KV `delivered` verhindert Doppelversand |

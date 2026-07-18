@@ -36,21 +36,100 @@ type attachmentFetcher interface {
 
 var procLog = loggy.GetLogger("Processor")
 
-// Processor handles NATS messages: deserialize → dedup → send → audit.
+const minInProgressInterval = 10 * time.Second
+
+// Processor handles NATS messages: deserialize → dedup → max-deliver gate → send → audit.
 type Processor struct {
-	graph     emailSender
-	delivered deliveredStore
-	js        jsPublisher
-	attStore  attachmentFetcher
+	graph           emailSender
+	delivered       deliveredStore
+	js              jsPublisher
+	attStore        attachmentFetcher
+	maxDeliver      int
+	inProgressEvery time.Duration
+	// test hooks (nil in production): allow unit tests to inject delivery count / term without JetStream reply subjects.
+	deliveryCountFn func(msg *nats.Msg) (uint64, bool)
+	termFn          func(msg *nats.Msg) error
 }
 
-func NewProcessor(graph emailSender, delivered nats.KeyValue, js jsPublisher, attStore attachmentFetcher) *Processor {
-	return &Processor{graph: graph, delivered: delivered, js: js, attStore: attStore}
+// NewProcessor builds a Processor. maxDeliver and ackWait drive the MaxDeliver gate and
+// InProgress heartbeat interval (ackWait/3, minimum 10s).
+func NewProcessor(graph emailSender, delivered nats.KeyValue, js jsPublisher, attStore attachmentFetcher, maxDeliver int, ackWait time.Duration) *Processor {
+	return &Processor{
+		graph:           graph,
+		delivered:       delivered,
+		js:              js,
+		attStore:        attStore,
+		maxDeliver:      maxDeliver,
+		inProgressEvery: inProgressInterval(ackWait),
+	}
+}
+
+// inProgressInterval returns how often to call msg.InProgress: AckWait/3, min 10s.
+func inProgressInterval(ackWait time.Duration) time.Duration {
+	every := ackWait / 3
+	if every < minInProgressInterval {
+		return minInProgressInterval
+	}
+	return every
+}
+
+// shouldTerminateMaxDeliver reports whether NumDelivered has reached the configured limit.
+// Pure helper for unit tests and the Handle gate.
+func shouldTerminateMaxDeliver(numDelivered uint64, maxDeliver int) bool {
+	if maxDeliver < 1 {
+		return false
+	}
+	return numDelivered >= uint64(maxDeliver)
+}
+
+// deliveryCount returns JetStream NumDelivered when metadata is available.
+// On plain *nats.Msg (unit tests) Metadata fails → ok=false and the MaxDeliver gate is skipped.
+func deliveryCount(msg *nats.Msg) (uint64, bool) {
+	md, err := msg.Metadata()
+	if err != nil {
+		return 0, false
+	}
+	return md.NumDelivered, true
+}
+
+// startInProgress periodically signals JetStream that work is still in progress so long
+// Graph/attachment handling does not redeliver under AckWait. Failures are warn-only.
+// Returns a stop func that must be deferred.
+func startInProgress(msg *nats.Msg, every time.Duration) (stop func()) {
+	if every <= 0 {
+		return func() {}
+	}
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(every)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				if err := msg.InProgress(); err != nil {
+					procLog.Warn("InProgress signal failed", loggy.Kv("error", err.Error()))
+				}
+			}
+		}
+	}()
+	return func() { close(done) }
+}
+
+// terminalStop stops redelivery: prefer Term, fall back to Ack.
+func terminalStop(msg *nats.Msg) {
+	if err := msg.Term(); err != nil {
+		_ = msg.Ack()
+	}
 }
 
 var errMissingTraceID = errors.New("missing traceId")
 
 func (p *Processor) Handle(ctx context.Context, msg *nats.Msg) {
+	stop := startInProgress(msg, p.inProgressEvery)
+	defer stop()
+
 	var req domain.MailRequestDO
 	if err := json.Unmarshal(msg.Data, &req); err != nil {
 		procLog.Error("dead letter: JSON parse failed", err)
@@ -73,6 +152,8 @@ func (p *Processor) Handle(ctx context.Context, msg *nats.Msg) {
 
 	// idempotent dedup — fail-closed: ErrKeyNotFound = nicht zugestellt (weiter verarbeiten),
 	// jeder andere Fehler = transient (return ohne Ack → JetStream-Redelivery)
+	// Dedup runs BEFORE MaxDeliver so a successful Put on a prior attempt still Ack-skips
+	// without FAILED/DLQ even when NumDelivered is high.
 	_, kvErr := p.delivered.Get(traceID)
 	if kvErr == nil {
 		log.Info("duplicate delivery detected, acking and skipping")
@@ -82,6 +163,30 @@ func (p *Processor) Handle(ctx context.Context, msg *nats.Msg) {
 	if !errors.Is(kvErr, nats.ErrKeyNotFound) {
 		log.Warn("delivered KV lookup failed, not acking", loggy.Kv("error", kvErr.Error()))
 		return // no ack → JetStream redelivers
+	}
+
+	// MaxDeliver gate: terminal stop + DLQ when delivery count is exhausted (no Graph).
+	countFn := p.deliveryCountFn
+	if countFn == nil {
+		countFn = deliveryCount
+	}
+	if n, ok := countFn(msg); ok && shouldTerminateMaxDeliver(n, p.maxDeliver) {
+		cause := fmt.Errorf("max deliver exceeded: %d", n)
+		log.Error("max deliver exhausted, dead-lettering", cause,
+			loggy.Kv("numDelivered", n),
+			loggy.Kv("maxDeliver", p.maxDeliver),
+		)
+		p.writeDeadLetter(ctx, msg.Data, cause)
+		p.writeAudit(ctx, req, domain.StatusFailed, cause.Error())
+		if len(req.Attachments) > 0 && p.attStore != nil {
+			p.attStore.Cleanup(req.Attachments)
+		}
+		if p.termFn != nil {
+			_ = p.termFn(msg)
+		} else {
+			terminalStop(msg)
+		}
+		return
 	}
 
 	// fetch attachment bytes from Object Store before sending

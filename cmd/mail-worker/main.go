@@ -36,7 +36,7 @@ func main() {
 		log.Critical("NATS setup failed", err)
 		os.Exit(1)
 	}
-	if err := natsutil.ProvisionWorkerConsumer(js); err != nil {
+	if err := natsutil.ProvisionWorkerConsumer(js, cfg.WorkerAckWait, cfg.WorkerMaxDeliver); err != nil {
 		log.Critical("provision consumer", err)
 		os.Exit(1)
 	}
@@ -57,13 +57,17 @@ func main() {
 	graphService := msgraph.NewService(graphClient, rateLimiter)
 
 	attStore := worker.NewAttachmentStore(objStore)
-	processor := worker.NewProcessor(graphService, deliveredKV, js, attStore)
+	processor := worker.NewProcessor(graphService, deliveredKV, js, attStore, cfg.WorkerMaxDeliver, cfg.WorkerAckWait)
 	consumer := worker.NewConsumer(js, processor)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	log.Info("mail-worker started", loggy.Kv("version", version.Version))
+	log.Info("mail-worker started",
+		loggy.Kv("version", version.Version),
+		loggy.Kv("ackWait", cfg.WorkerAckWait.String()),
+		loggy.Kv("maxDeliver", cfg.WorkerMaxDeliver),
+	)
 	if err := consumer.Run(ctx); err != nil {
 		log.Critical("consumer error", err)
 		os.Exit(1)

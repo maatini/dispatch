@@ -86,22 +86,30 @@ HTTP POST /dispatch/api/v1/mail/send
 ```
 
 ```
-NATS Consumer (pull, explicit ACK, 30s ack-wait)
+NATS Consumer (pull, explicit ACK, AckWait 5m, MaxDeliver 8)
+  + InProgress-Heartbeat (AckWait/3, min 10s)
         │
         ▼
 ┌───────────────────────────────────┐
 │          Processor.Handle         │
 │                                   │
+│  InProgress ticker (defer stop)   │
+│                                   │
 │  JSON-Parse fehlt → Dead Letter   │
 │         + ACK                     │
 │                                   │
 │  Duplicate (delivered KV) → ACK   │
+│  (Dedup VOR MaxDeliver-Gate)      │
+│                                   │
+│  NumDelivered >= MaxDeliver       │
+│    → DLQ + FAILED + Term          │
+│    (kein Graph)                   │
 │                                   │
 │  Attachments: Object Store Fetch  │
 │  Fehler → kein ACK (Redelivery)   │
 │                                   │
 │  Test-Flag → Audit TEST_SUCCESS   │
-│              + ACK + Cleanup      │
+│              + Put + ACK + Cleanup│
 │                                   │
 │  MS Graph SendEmail               │
 │  ┌─ Transient (429/5xx/IO) ──────┐│
@@ -337,6 +345,8 @@ DISPATCH_VALIDATION_MAX_BODY_SIZE=10000000
 DISPATCH_MAX_TOTAL_ATTACHMENT_SIZE_MB=20
 DISPATCH_GRAPH_RATE_LIMITER_SKIP_SLEEP=false
 DISPATCH_GATEWAY_AUTH_DISABLED=false  # true nur local/dev — sonst fail-closed ohne Token
+DISPATCH_WORKER_ACK_WAIT_SECONDS=300  # JetStream AckWait (default 5m); invalid/≤0 → default
+DISPATCH_WORKER_MAX_DELIVER=8         # finite redelivery; invalid/<1 (inkl. -1) → default 8
 MS_GRAPH_PROXY_URL=           # Dev Proxy (http://localhost:8000)
 MS_GRAPH_MOCK_TOKEN=          # Überspringt OAuth2, macht Credentials optional
 ```

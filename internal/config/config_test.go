@@ -62,6 +62,73 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.GraphRateLimiterSkip {
 		t.Error("GraphRateLimiterSkip default: want false")
 	}
+	if cfg.WorkerAckWait != 5*time.Minute {
+		t.Errorf("WorkerAckWait default: want 5m, got %v", cfg.WorkerAckWait)
+	}
+	if cfg.WorkerMaxDeliver != 8 {
+		t.Errorf("WorkerMaxDeliver default: want 8, got %d", cfg.WorkerMaxDeliver)
+	}
+}
+
+func TestLoad_WorkerAckWaitOverride(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("DISPATCH_WORKER_ACK_WAIT_SECONDS", "120")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf(unexpectedErr, err)
+	}
+	if cfg.WorkerAckWait != 120*time.Second {
+		t.Errorf("WorkerAckWait: want 120s, got %v", cfg.WorkerAckWait)
+	}
+}
+
+func TestLoad_WorkerMaxDeliverOverride(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("DISPATCH_WORKER_MAX_DELIVER", "3")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf(unexpectedErr, err)
+	}
+	if cfg.WorkerMaxDeliver != 3 {
+		t.Errorf("WorkerMaxDeliver: want 3, got %d", cfg.WorkerMaxDeliver)
+	}
+}
+
+func TestLoad_WorkerAckWaitInvalidFallsToDefault(t *testing.T) {
+	setRequiredEnv(t)
+	cases := []string{"not-a-number", "0", "-1", "-30"}
+	for _, v := range cases {
+		t.Run(v, func(t *testing.T) {
+			t.Setenv("DISPATCH_WORKER_ACK_WAIT_SECONDS", v)
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf(unexpectedErr, err)
+			}
+			if cfg.WorkerAckWait != 5*time.Minute {
+				t.Errorf("WorkerAckWait: want default 5m on %q, got %v", v, cfg.WorkerAckWait)
+			}
+		})
+	}
+}
+
+func TestLoad_WorkerMaxDeliverInvalidFallsToDefault(t *testing.T) {
+	setRequiredEnv(t)
+	// invalid parse, zero, and infinite (-1) must all fall back — infinite MaxDeliver is forbidden
+	cases := []string{"not-a-number", "0", "-1", "-5"}
+	for _, v := range cases {
+		t.Run(v, func(t *testing.T) {
+			t.Setenv("DISPATCH_WORKER_MAX_DELIVER", v)
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf(unexpectedErr, err)
+			}
+			if cfg.WorkerMaxDeliver != 8 {
+				t.Errorf("WorkerMaxDeliver: want default 8 on %q, got %d", v, cfg.WorkerMaxDeliver)
+			}
+		})
+	}
 }
 
 func TestLoad_AdminAuthSecretOptional(t *testing.T) {

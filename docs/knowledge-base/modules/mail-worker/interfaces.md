@@ -85,7 +85,9 @@ type attachmentFetcher interface {
 
 - **Durable name:** `mail-worker`
 - **Ack policy:** `AckExplicit`
-- **Ack wait:** 30 seconds
-- **Max deliver:** unlimited (-1)
+- **Ack wait:** 5 minutes (default; `DISPATCH_WORKER_ACK_WAIT_SECONDS`, invalid/≤0 → 300)
+- **Max deliver:** 8 (default; `DISPATCH_WORKER_MAX_DELIVER`, invalid/<1 including -1 → 8; infinite forbidden)
 - **Filter subject:** `cody.mailing.job.request.mails`
 - **Fetch batch size:** 10 messages
+- **Provision:** `ProvisionWorkerConsumer(js, ackWait, maxDeliver)` create **or update** (reconcile)
+- **InProgress:** heartbeat every AckWait/3 (min 10s) during `Handle`

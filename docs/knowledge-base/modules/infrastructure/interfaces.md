@@ -57,7 +57,8 @@ func Setup(js nats.JetStreamContext, spamTTL time.Duration) error
 func ProvisionStreams(js nats.JetStreamContext) error
 func ProvisionKVBuckets(js nats.JetStreamContext, spamTTL time.Duration) error
 func ProvisionObjectStore(js nats.JetStreamContext) (nats.ObjectStore, error)
-func ProvisionWorkerConsumer(js nats.JetStreamContext) error
+// ackWait / maxDeliver from config (defaults 5m / 8); updates existing consumer
+func ProvisionWorkerConsumer(js nats.JetStreamContext, ackWait time.Duration, maxDeliver int) error
 ```
 
 ### Name Constants

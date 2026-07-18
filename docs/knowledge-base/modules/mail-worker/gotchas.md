@@ -12,6 +12,22 @@ Mixing these up would cause either:
 
 The distinction is enforced via `errors.As(err, &transient)` in `processor.processSend()`.
 
+## AckWait 5m + InProgress — Do Not Rely on Short AckWait Alone
+
+Defaults: `AckWait=5m` (`DISPATCH_WORKER_ACK_WAIT_SECONDS`), `MaxDeliver=8` (`DISPATCH_WORKER_MAX_DELIVER`). Infinite MaxDeliver (`-1`) is rejected by config.
+
+While `Handle` runs, a ticker calls `msg.InProgress()` every `AckWait/3` (min 10s) so Graph retries / attachment work do not redeliver mid-flight. InProgress failures are warn-only (non-fatal).
+
+`ProvisionWorkerConsumer(js, ackWait, maxDeliver)` **updates** an existing consumer — restart after deploy is required for live clusters to pick up new values (create-only would leave 30s/-1 forever).
+
+## MaxDeliver Gate: Dedup Before Gate, Then DLQ + Term
+
+Order is intentional:
+1. Dedup Get first — if already delivered, Ack-skip **even** when `NumDelivered` is high (no false FAILED/DLQ after successful Put).
+2. Then if `NumDelivered >= maxDeliver`: write dead letter (`max deliver exceeded: N`), FAILED audit, best-effort attachment cleanup, `msg.Term()` (Ack fallback). **No Graph call.**
+
+Unit tests without JetStream reply subjects skip the gate fail-soft (`Metadata()` fails → no count).
+
 ## Dedup Is Fail-Closed (Get and Put)
 
 **Get** (`delivered.Get(traceID)`):

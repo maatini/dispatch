@@ -188,7 +188,9 @@ func TestProvisionWorkerConsumer_Creates(t *testing.T) {
 	if err := ProvisionStreams(js); err != nil {
 		t.Fatalf("ProvisionStreams: %v", err)
 	}
-	if err := ProvisionWorkerConsumer(js); err != nil {
+	wantAckWait := 5 * time.Minute
+	wantMaxDeliver := 8
+	if err := ProvisionWorkerConsumer(js, wantAckWait, wantMaxDeliver); err != nil {
 		t.Fatalf("ProvisionWorkerConsumer: %v", err)
 	}
 
@@ -199,6 +201,12 @@ func TestProvisionWorkerConsumer_Creates(t *testing.T) {
 	if info.Config.Durable != ConsumerMailWorker {
 		t.Errorf("durable name: want %s, got %s", ConsumerMailWorker, info.Config.Durable)
 	}
+	if info.Config.AckWait != wantAckWait {
+		t.Errorf("AckWait: want %v, got %v", wantAckWait, info.Config.AckWait)
+	}
+	if info.Config.MaxDeliver != wantMaxDeliver {
+		t.Errorf("MaxDeliver: want %d, got %d", wantMaxDeliver, info.Config.MaxDeliver)
+	}
 }
 
 func TestProvisionWorkerConsumer_Idempotent(t *testing.T) {
@@ -206,10 +214,54 @@ func TestProvisionWorkerConsumer_Idempotent(t *testing.T) {
 	if err := ProvisionStreams(js); err != nil {
 		t.Fatalf("ProvisionStreams: %v", err)
 	}
-	if err := ProvisionWorkerConsumer(js); err != nil {
+	ackWait := 5 * time.Minute
+	maxDeliver := 8
+	if err := ProvisionWorkerConsumer(js, ackWait, maxDeliver); err != nil {
 		t.Fatalf("first: %v", err)
 	}
-	if err := ProvisionWorkerConsumer(js); err != nil {
+	if err := ProvisionWorkerConsumer(js, ackWait, maxDeliver); err != nil {
 		t.Fatalf("second must be idempotent: %v", err)
+	}
+	info, err := js.ConsumerInfo(StreamMails, ConsumerMailWorker)
+	if err != nil {
+		t.Fatalf("consumer info: %v", err)
+	}
+	if info.Config.AckWait != ackWait || info.Config.MaxDeliver != maxDeliver {
+		t.Errorf("idempotent provision: want AckWait=%v MaxDeliver=%d, got %v / %d",
+			ackWait, maxDeliver, info.Config.AckWait, info.Config.MaxDeliver)
+	}
+}
+
+func TestProvisionWorkerConsumer_UpdateReconciles(t *testing.T) {
+	_, js := testNATS(t)
+	if err := ProvisionStreams(js); err != nil {
+		t.Fatalf("ProvisionStreams: %v", err)
+	}
+	// Simulate a cluster that still has the pre-#13 defaults (30s / -1).
+	if _, err := js.AddConsumer(StreamMails, &nats.ConsumerConfig{
+		Durable:       ConsumerMailWorker,
+		AckPolicy:     nats.AckExplicitPolicy,
+		MaxDeliver:    -1,
+		AckWait:       30 * time.Second,
+		FilterSubject: SubjectMails,
+	}); err != nil {
+		t.Fatalf("seed old consumer: %v", err)
+	}
+
+	wantAckWait := 5 * time.Minute
+	wantMaxDeliver := 8
+	if err := ProvisionWorkerConsumer(js, wantAckWait, wantMaxDeliver); err != nil {
+		t.Fatalf("ProvisionWorkerConsumer update: %v", err)
+	}
+
+	info, err := js.ConsumerInfo(StreamMails, ConsumerMailWorker)
+	if err != nil {
+		t.Fatalf("consumer info: %v", err)
+	}
+	if info.Config.AckWait != wantAckWait {
+		t.Errorf("AckWait after update: want %v, got %v", wantAckWait, info.Config.AckWait)
+	}
+	if info.Config.MaxDeliver != wantMaxDeliver {
+		t.Errorf("MaxDeliver after update: want %d, got %d", wantMaxDeliver, info.Config.MaxDeliver)
 	}
 }

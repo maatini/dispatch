@@ -8,6 +8,11 @@ import (
 	"time"
 )
 
+const (
+	defaultWorkerAckWaitSeconds = 300 // 5m
+	defaultWorkerMaxDeliver     = 8
+)
+
 type Config struct {
 	Port                 string
 	NatsURL              string
@@ -22,11 +27,13 @@ type Config struct {
 	MaxTotalAttachmentMB int
 	NatsPublishTimeout   time.Duration
 	GraphRateLimiterSkip bool
-	GraphProxyURL        string // MS_GRAPH_PROXY_URL — routes Graph calls through Dev Proxy
-	GraphMockToken       string // MS_GRAPH_MOCK_TOKEN — skips OAuth2, makes Graph credentials optional
-	AdminAuthSecret      string // DISPATCH_ADMIN_AUTH_SECRET — HMAC secret for Admin-API JWT auth
-	GatewayAuthToken     string // DISPATCH_GATEWAY_AUTH_TOKEN — Bearer token for POST /mail/send
-	GatewayAuthDisabled  bool   // DISPATCH_GATEWAY_AUTH_DISABLED=true — local dev only; skips send auth
+	GraphProxyURL        string        // MS_GRAPH_PROXY_URL — routes Graph calls through Dev Proxy
+	GraphMockToken       string        // MS_GRAPH_MOCK_TOKEN — skips OAuth2, makes Graph credentials optional
+	AdminAuthSecret      string        // DISPATCH_ADMIN_AUTH_SECRET — HMAC secret for Admin-API JWT auth
+	GatewayAuthToken     string        // DISPATCH_GATEWAY_AUTH_TOKEN — Bearer token for POST /mail/send
+	GatewayAuthDisabled  bool          // DISPATCH_GATEWAY_AUTH_DISABLED=true — local dev only; skips send auth
+	WorkerAckWait        time.Duration // DISPATCH_WORKER_ACK_WAIT_SECONDS — JetStream AckWait (default 5m)
+	WorkerMaxDeliver     int           // DISPATCH_WORKER_MAX_DELIVER — finite redelivery limit (default 8; infinite forbidden)
 }
 
 func Load() (Config, error) {
@@ -92,7 +99,22 @@ func Load() (Config, error) {
 		AdminAuthSecret:      adminAuthSecret,
 		GatewayAuthToken:     gatewayAuthToken,
 		GatewayAuthDisabled:  gatewayAuthDisabled,
+		WorkerAckWait:        workerAckWait(),
+		WorkerMaxDeliver:     workerMaxDeliver(),
 	}, nil
+}
+
+// workerAckWait returns DISPATCH_WORKER_ACK_WAIT_SECONDS as a duration.
+// Invalid or ≤0 values fall back to the 5m default (infinite/zero AckWait is not allowed).
+func workerAckWait() time.Duration {
+	secs := envIntPositive("DISPATCH_WORKER_ACK_WAIT_SECONDS", defaultWorkerAckWaitSeconds)
+	return time.Duration(secs) * time.Second
+}
+
+// workerMaxDeliver returns DISPATCH_WORKER_MAX_DELIVER.
+// Invalid or <1 values (including -1 / infinite) fall back to the default of 8.
+func workerMaxDeliver() int {
+	return envIntPositive("DISPATCH_WORKER_MAX_DELIVER", defaultWorkerMaxDeliver)
 }
 
 func envOr(key, def string) string {
@@ -109,6 +131,20 @@ func envInt(key string, def int) int {
 	}
 	n, err := strconv.Atoi(v)
 	if err != nil {
+		return def
+	}
+	return n
+}
+
+// envIntPositive is like envInt but rejects n < 1 (invalid parse, 0, and negative
+// including -1 for infinite MaxDeliver) by returning def.
+func envIntPositive(key string, def int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 {
 		return def
 	}
 	return n

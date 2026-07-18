@@ -148,18 +148,32 @@ func ProvisionObjectStore(js nats.JetStreamContext) (nats.ObjectStore, error) {
 	return store, nil
 }
 
-// ProvisionWorkerConsumer ensures the durable pull consumer for the mail worker exists.
-func ProvisionWorkerConsumer(js nats.JetStreamContext) error {
+// ProvisionWorkerConsumer ensures the durable pull consumer for the mail worker
+// exists with the desired AckWait and MaxDeliver. If the consumer already exists
+// it is updated (reconcile) so restarts apply new settings after deploy.
+// maxDeliver must be >= 1 (caller is responsible; config rejects infinite).
+func ProvisionWorkerConsumer(js nats.JetStreamContext, ackWait time.Duration, maxDeliver int) error {
+	cfg := &nats.ConsumerConfig{
+		Durable:       ConsumerMailWorker,
+		AckPolicy:     nats.AckExplicitPolicy,
+		MaxDeliver:    maxDeliver,
+		AckWait:       ackWait,
+		FilterSubject: SubjectMails,
+	}
 	_, err := js.ConsumerInfo(StreamMails, ConsumerMailWorker)
 	if err == nats.ErrConsumerNotFound {
-		_, err = js.AddConsumer(StreamMails, &nats.ConsumerConfig{
-			Durable:       ConsumerMailWorker,
-			AckPolicy:     nats.AckExplicitPolicy,
-			MaxDeliver:    -1,
-			AckWait:       30 * time.Second,
-			FilterSubject: SubjectMails,
-		})
-		return err
+		_, err = js.AddConsumer(StreamMails, cfg)
+		if err != nil {
+			return fmt.Errorf("add consumer %s: %w", ConsumerMailWorker, err)
+		}
+		return nil
 	}
-	return err
+	if err != nil {
+		return fmt.Errorf("consumer info %s: %w", ConsumerMailWorker, err)
+	}
+	_, err = js.UpdateConsumer(StreamMails, cfg)
+	if err != nil {
+		return fmt.Errorf("update consumer %s: %w", ConsumerMailWorker, err)
+	}
+	return nil
 }

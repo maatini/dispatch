@@ -33,7 +33,7 @@ The infrastructure module provides **shared utilities** with no domain-specific 
 - `ProvisionStreams(js)` — ensure 4 streams exist (add if missing, update if exists)
 - `ProvisionKVBuckets(js, spamTTL)` — ensure 4 KV buckets exist
 - `ProvisionObjectStore(js)` — ensure attachment object store exists (72h TTL)
-- `ProvisionWorkerConsumer(js)` — ensure durable pull consumer exists
+- `ProvisionWorkerConsumer(js, ackWait, maxDeliver)` — ensure durable pull consumer exists with desired AckWait/MaxDeliver (create or UpdateConsumer)
 
 **Constants defined:**
 - Stream names: `DISPATCH_MAILS`, `DISPATCH_AUDIT`, `DISPATCH_DEAD_LETTERS`, `DISPATCH_BOUNCES`
