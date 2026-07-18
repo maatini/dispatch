@@ -120,26 +120,3 @@ func (c *Checker) attempt(appTag string, limit, requested int) error {
 	}
 	return nil
 }
-
-// CurrentUsage returns the rolling 24h recipient count for an appTag (for headers/metrics).
-func (c *Checker) CurrentUsage(appTag string) (int, error) {
-	kve, err := c.kv.Get(appTag)
-	if errors.Is(err, nats.ErrKeyNotFound) {
-		return 0, nil
-	}
-	if err != nil {
-		return 0, fmt.Errorf("quota KV get %s: %w", appTag, err)
-	}
-	var current state
-	if err := json.Unmarshal(kve.Value(), &current); err != nil {
-		return 0, fmt.Errorf("quota unmarshal %s: %w", appTag, err)
-	}
-	cutoff := time.Now().Add(-24 * time.Hour).Unix()
-	sum := 0
-	for _, e := range current.Entries {
-		if e.TS > cutoff {
-			sum += e.Count
-		}
-	}
-	return sum, nil
-}

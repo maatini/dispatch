@@ -13,7 +13,7 @@ Reliable, scalable, multi-tenant email delivery with:
 
 | Layer | Technology |
 |---|---|
-| Language | Go 1.25+ (toolchain go1.25.9) |
+| Language | Go 1.25+ (toolchain go1.26.5) |
 | HTTP Router | `github.com/go-chi/chi/v5` |
 | Message Broker & State | **NATS JetStream** — streams, KV store, object store |
 | Email Transport | **Microsoft Graph API v1.0** |

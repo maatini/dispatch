@@ -12,7 +12,7 @@
 
 | Service | Used By | How |
 |---|---|---|
-| `quota.Checker` | `internal/gateway/` | `quotaChecker` interface → `Check()`, `CurrentUsage()` |
+| `quota.Checker` | `internal/gateway/` | `quotaChecker` interface → `Check()` |
 | `sender.Store` | `internal/gateway/` | `senderLookup` interface → `Get()` |
 | `sender.Store` | `internal/admin/` | Direct import → `Get()`, `Put()`, `Delete()`, `List()` |
 | `spam.Checker` | `internal/gateway/` | `spamChecker` interface → `Check()` |

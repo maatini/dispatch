@@ -12,7 +12,6 @@ The services module provides **domain services backed by NATS KV** — they enca
 
 **Entry points:**
 - `Check(appTag string, limit, requested int) error` — verify and record usage
-- `CurrentUsage(appTag string) (int, error)` — current rolling 24h count (for rate limit headers)
 
 **Algorithm:**
 1. Read current state from NATS KV keyed by `appTag`

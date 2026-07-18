@@ -32,12 +32,8 @@ func main() {
 	defer nc.Close()
 
 	spamTTL := time.Duration(cfg.SpamTimeoutSeconds) * time.Second
-	if err := natsutil.ProvisionStreams(js); err != nil {
-		log.Critical("provision streams", err)
-		os.Exit(1)
-	}
-	if err := natsutil.ProvisionKVBuckets(js, spamTTL); err != nil {
-		log.Critical("provision KV", err)
+	if err := natsutil.Setup(js, spamTTL); err != nil {
+		log.Critical("NATS setup failed", err)
 		os.Exit(1)
 	}
 

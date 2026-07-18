@@ -112,3 +112,16 @@
 - docs/knowledge-base (msgraph/mail-worker/mail-admin gotchas + interfaces aktualisiert)
 **Ergebnis:** `go build/vet/test -race` → 254 Tests grün, `golangci-lint` 0 Issues. Integrationstests kompilieren sauber.
 **Hinweis:** Integration-Target-Coverage (admin ≥80 %, worker ≥85 %) wird durch Integrationstests gegen lokales NATS erreicht — die Unit-Test-Coverage allein erreicht admin 55 % / worker 77 %, da Stream-Reads (readStream) und Consumer-Loop ohne reales NATS nicht testbar sind.
+
+## 2026-07-18 — Cleanup-Refactor: Deduplizierung + toter Code entfernt
+
+**Begründung:** Nach tests07 lagen vier nahezu identische KV-Mocks in den Test-Packages verteilt vor, die HTTP-Server-Lifecycle war in mail-admin/mail-gateway dupliziert, die Provisionierung in allen vier `cmd/main.go` wiederholt, und loggy/quota enthielten ungenutzten Code. Die für Admin-Tests exportierten `sender.Store`-Felder (tests07) wurden durch ein sauberes Interface ersetzt.
+**Änderungen:**
+- `internal/httpsrv` (NEU): gemeinsame HTTP-Server-Lifecycle (`Run` mit Graceful Shutdown, 10s Timeout) + Tests; ersetzt Duplikate in `cmd/mail-admin` und `cmd/mail-gateway`
+- `internal/testkit` (NEU): gemeinsames `MockKV` (map-basiert, Fehler-Injektion, Revision/CAS-Tracking); konsolidiert lokale Mocks aus `admin`, `quota`, `sender`, `spam`, `worker`-Tests
+- `internal/natsutil/setup.go` (`Setup`: kombiniert ProvisionStreams + ProvisionKVBuckets); alle vier `cmd/*/main.go` nutzen es
+- `internal/sender/sender.go` (Felder zurück privat; exportiertes `KV`-Interface + `DefaultCacheTTL`-Konstante; ungenutztes `InvalidateCache` entfernt)
+- `internal/loggy/loggy.go` (toter Code entfernt: `Alert`, `Debug`/`Debugc`, `BusinessRuleViolation`, `ValidationFailed`, `MissingData`, `UncaughtException`, `ServiceAccountExpired`, `UnstructuredLog` + 6 ungenutzte Kategorien)
+- `internal/quota/quota.go` (ungenutztes `CurrentUsage` entfernt; Interface in `gateway/handler.go` entsprechend verschlankt)
+- devbox.json/README/ARCHITECTURE.md (Skript-Namen in Hilfetext/Doku korrigiert: `dev-proxy:up`, `worker-dev`, `gateway-dev`), CLAUDE.md (Go 1.25, toter Link `coding-idioms.md` entfernt), knowledge-base synchronisiert (Interfaces, toolchain go1.26.5)
+**Ergebnis:** `go build/vet/test -race` → 241 Tests grün (−13: Tests für entfernten toten Code entfallen), `golangci-lint` 0 Issues, Integrationstests kompilieren (`-tags integration`). Datei-Korruption in README.md/CLAUDE.md/responsibility.md aus unterbrochener Session repariert (doppelte Zeilenfragmente am Dateiende).

@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/nats-io/nats.go"
 
 	"dispatch/internal/domain"
 	"dispatch/internal/msgraph"
+	"dispatch/internal/testkit"
 )
 
 const (
@@ -23,43 +23,6 @@ const (
 type stubGraph struct{ err error }
 
 func (s *stubGraph) SendEmail(_ context.Context, _ domain.MailRequestDO) error { return s.err }
-
-type stubKV struct {
-	data   map[string][]byte
-	getErr error
-	putErr error
-}
-
-func newStubKV() *stubKV { return &stubKV{data: make(map[string][]byte)} }
-
-func (s *stubKV) Get(key string) (nats.KeyValueEntry, error) {
-	if s.getErr != nil {
-		return nil, s.getErr
-	}
-	v, ok := s.data[key]
-	if !ok {
-		return nil, nats.ErrKeyNotFound
-	}
-	return &stubKVEntry{value: v}, nil
-}
-
-func (s *stubKV) Put(key string, value []byte) (uint64, error) {
-	if s.putErr != nil {
-		return 0, s.putErr
-	}
-	s.data[key] = value
-	return 1, nil
-}
-
-type stubKVEntry struct{ value []byte }
-
-func (e *stubKVEntry) Bucket() string             { return "" }
-func (e *stubKVEntry) Key() string                { return "" }
-func (e *stubKVEntry) Value() []byte              { return e.value }
-func (e *stubKVEntry) Revision() uint64           { return 0 }
-func (e *stubKVEntry) Delta() uint64              { return 0 }
-func (e *stubKVEntry) Created() time.Time         { return time.Time{} }
-func (e *stubKVEntry) Operation() nats.KeyValueOp { return nats.KeyValuePut }
 
 // captureJS captures published NATS messages for test assertions.
 type captureJS struct {
@@ -80,7 +43,7 @@ func buildMsg(req domain.MailRequestDO) *nats.Msg {
 
 func TestHandle_Success(t *testing.T) {
 	js := &captureJS{}
-	kv := newStubKV()
+	kv := testkit.NewMockKV()
 	proc := &Processor{graph: &stubGraph{}, delivered: kv, js: js}
 
 	req := domain.MailRequestDO{TraceID: "trace-1", AppTag: "app", Sender: testSender, Recipients: []string{testRecipient}}
@@ -105,7 +68,7 @@ func TestHandle_TransientError_NoAudit(t *testing.T) {
 	js := &captureJS{}
 	proc := &Processor{
 		graph:     &stubGraph{err: &msgraph.GraphTransientError{StatusCode: 500}},
-		delivered: newStubKV(),
+		delivered: testkit.NewMockKV(),
 		js:        js,
 	}
 	req := domain.MailRequestDO{TraceID: "trace-2", AppTag: "app", Sender: testSender, Recipients: []string{testRecipient}}
@@ -120,7 +83,7 @@ func TestHandle_PermanentError_FAILEDAudit(t *testing.T) {
 	js := &captureJS{}
 	proc := &Processor{
 		graph:     &stubGraph{err: &msgraph.GraphPermanentError{StatusCode: 400, Body: "bad"}},
-		delivered: newStubKV(),
+		delivered: testkit.NewMockKV(),
 		js:        js,
 	}
 	req := domain.MailRequestDO{TraceID: "trace-3", AppTag: "app", Sender: testSender, Recipients: []string{testRecipient}}
@@ -138,7 +101,7 @@ func TestHandle_PermanentError_FAILEDAudit(t *testing.T) {
 
 func TestHandle_TestMode_NoGraphCall(t *testing.T) {
 	js := &captureJS{}
-	kv := newStubKV()
+	kv := testkit.NewMockKV()
 	graphCalled := false
 	proc := &Processor{
 		graph:     &callCheckGraph{onCall: func() { graphCalled = true }},
@@ -164,8 +127,8 @@ func TestHandle_TestMode_NoGraphCall(t *testing.T) {
 
 func TestHandle_DuplicateDelivery_NoGraphCall(t *testing.T) {
 	js := &captureJS{}
-	kv := newStubKV()
-	kv.data["trace-5"] = []byte{1}
+	kv := testkit.NewMockKV()
+	kv.Data["trace-5"] = []byte{1}
 
 	graphCalled := false
 	proc := &Processor{
@@ -187,7 +150,7 @@ func TestHandle_DuplicateDelivery_NoGraphCall(t *testing.T) {
 
 func TestHandle_InvalidJSON_DeadLetter(t *testing.T) {
 	js := &captureJS{}
-	proc := &Processor{graph: &stubGraph{}, delivered: newStubKV(), js: js}
+	proc := &Processor{graph: &stubGraph{}, delivered: testkit.NewMockKV(), js: js}
 
 	msg := &nats.Msg{Data: []byte("not json"), Header: nats.Header{}}
 	msg.Header.Set("traceId", "trace-6")
@@ -200,7 +163,7 @@ func TestHandle_InvalidJSON_DeadLetter(t *testing.T) {
 
 func TestHandle_MissingTraceID_GoesToDeadLetter(t *testing.T) {
 	js := &captureJS{}
-	kv := newStubKV()
+	kv := testkit.NewMockKV()
 	graphCalled := false
 	proc := &Processor{
 		graph:     &callCheckGraph{onCall: func() { graphCalled = true }},
@@ -215,8 +178,8 @@ func TestHandle_MissingTraceID_GoesToDeadLetter(t *testing.T) {
 	if graphCalled {
 		t.Error("missing traceId must not call MS Graph")
 	}
-	if len(kv.data) != 0 {
-		t.Errorf("delivered KV must stay empty, got %d keys", len(kv.data))
+	if len(kv.Data) != 0 {
+		t.Errorf("delivered KV must stay empty, got %d keys", len(kv.Data))
 	}
 	if len(js.records) == 0 {
 		t.Fatal("expected dead letter record")
@@ -232,7 +195,7 @@ func TestHandle_MissingTraceID_GoesToDeadLetter(t *testing.T) {
 
 func TestHandle_DedupUsesPayloadTraceID(t *testing.T) {
 	js := &captureJS{}
-	kv := newStubKV()
+	kv := testkit.NewMockKV()
 	proc := &Processor{graph: &stubGraph{}, delivered: kv, js: js}
 
 	req := domain.MailRequestDO{TraceID: "payload-trace", AppTag: "app", Sender: testSender, Recipients: []string{testRecipient}}
@@ -276,14 +239,14 @@ func (j *failJS) Publish(_ string, _ []byte, _ ...nats.PubOpt) (*nats.PubAck, er
 }
 
 func TestHandle_AuditPublishError_DoesNotPanic(t *testing.T) {
-	proc := &Processor{graph: &stubGraph{}, delivered: newStubKV(), js: &failJS{}}
+	proc := &Processor{graph: &stubGraph{}, delivered: testkit.NewMockKV(), js: &failJS{}}
 	req := domain.MailRequestDO{TraceID: "t-pub", AppTag: "app", Sender: testSender, Recipients: []string{testRecipient}}
 	// must complete without panic; audit publish error is only logged
 	proc.Handle(context.Background(), buildMsg(req))
 }
 
 func TestHandle_DeadLetterPublishError_DoesNotPanic(t *testing.T) {
-	proc := &Processor{graph: &stubGraph{}, delivered: newStubKV(), js: &failJS{}}
+	proc := &Processor{graph: &stubGraph{}, delivered: testkit.NewMockKV(), js: &failJS{}}
 	msg := &nats.Msg{Data: []byte("not json"), Header: nats.Header{}}
 	msg.Header.Set("traceId", "t-dl")
 	proc.Handle(context.Background(), msg)
@@ -291,7 +254,7 @@ func TestHandle_DeadLetterPublishError_DoesNotPanic(t *testing.T) {
 
 func TestHandle_AttachmentFetchError_NoAck(t *testing.T) {
 	att := &stubAttFetcher{fetchErr: errors.New("object store down")}
-	proc := &Processor{graph: &stubGraph{}, delivered: newStubKV(), js: &captureJS{}, attStore: att}
+	proc := &Processor{graph: &stubGraph{}, delivered: testkit.NewMockKV(), js: &captureJS{}, attStore: att}
 
 	req := domain.MailRequestDO{
 		TraceID:     "trace-att",
@@ -315,7 +278,7 @@ func TestHandle_AttachmentFetchError_NoAck(t *testing.T) {
 func TestHandle_AttachmentCleanupAfterDelivery(t *testing.T) {
 	att := &stubAttFetcher{}
 	js := &captureJS{}
-	kv := newStubKV()
+	kv := testkit.NewMockKV()
 	proc := &Processor{graph: &stubGraph{}, delivered: kv, js: js, attStore: att}
 
 	req := domain.MailRequestDO{
@@ -336,7 +299,7 @@ func TestHandle_AttachmentCleanupAfterPermanentError(t *testing.T) {
 	js := &captureJS{}
 	proc := &Processor{
 		graph:     &stubGraph{err: &msgraph.GraphPermanentError{StatusCode: 400, Body: "bad"}},
-		delivered: newStubKV(),
+		delivered: testkit.NewMockKV(),
 		js:        js,
 		attStore:  att,
 	}
@@ -357,7 +320,7 @@ func TestHandle_AttachmentCleanupAfterPermanentError(t *testing.T) {
 func TestHandle_TestMode_AttachmentCleanup(t *testing.T) {
 	att := &stubAttFetcher{}
 	js := &captureJS{}
-	kv := newStubKV()
+	kv := testkit.NewMockKV()
 	proc := &Processor{
 		graph:     &callCheckGraph{onCall: func() { /* test mode skips MS Graph; this stub must not be invoked */ }},
 		delivered: kv,
@@ -381,8 +344,8 @@ func TestHandle_TestMode_AttachmentCleanup(t *testing.T) {
 
 func TestHandle_DedupGetError_NotKeyNotFound_FailClosed(t *testing.T) {
 	js := &captureJS{}
-	kv := newStubKV()
-	kv.getErr = errors.New("KV connection lost")
+	kv := testkit.NewMockKV()
+	kv.GetErr = errors.New("KV connection lost")
 
 	graphCalled := false
 	proc := &Processor{
@@ -404,8 +367,8 @@ func TestHandle_DedupGetError_NotKeyNotFound_FailClosed(t *testing.T) {
 
 func TestHandle_DedupPutError_ContinuesProcessing(t *testing.T) {
 	js := &captureJS{}
-	kv := newStubKV()
-	kv.putErr = errors.New("KV full")
+	kv := testkit.NewMockKV()
+	kv.PutErr = errors.New("KV full")
 
 	proc := &Processor{
 		graph:     &stubGraph{},
@@ -429,7 +392,7 @@ func TestHandle_DedupPutError_ContinuesProcessing(t *testing.T) {
 func TestHandle_WriteAuditMarshalError_DoesNotPanic(t *testing.T) {
 	// writeAudit marshals domain.AuditRecord; a nil recipient list should be fine
 	js := &captureJS{}
-	kv := newStubKV()
+	kv := testkit.NewMockKV()
 	proc := &Processor{graph: &stubGraph{}, delivered: kv, js: js}
 
 	req := domain.MailRequestDO{TraceID: "trace-audit-marshal", AppTag: "app", Sender: testSender, Recipients: nil}
@@ -442,8 +405,8 @@ func TestHandle_WriteAuditMarshalError_DoesNotPanic(t *testing.T) {
 
 func TestHandle_TestMode_DeliveredPutError(t *testing.T) {
 	js := &captureJS{}
-	kv := newStubKV()
-	kv.putErr = errors.New("KV down")
+	kv := testkit.NewMockKV()
+	kv.PutErr = errors.New("KV down")
 	proc := &Processor{graph: &stubGraph{}, delivered: kv, js: js}
 
 	req := domain.MailRequestDO{TraceID: "trace-test-put", Test: true, AppTag: "app", Sender: testSender, Recipients: []string{testRecipient}}

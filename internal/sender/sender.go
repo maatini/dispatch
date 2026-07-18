@@ -12,7 +12,11 @@ import (
 	"dispatch/internal/domain"
 )
 
-type kvStore interface {
+// DefaultCacheTTL is the default in-memory cache duration for sender lookups.
+const DefaultCacheTTL = 10 * time.Minute
+
+// KV is the minimal KV store interface required by Store.
+type KV interface {
 	Get(key string) (nats.KeyValueEntry, error)
 	Put(key string, value []byte) (uint64, error)
 	Create(key string, value []byte) (uint64, error)
@@ -20,43 +24,37 @@ type kvStore interface {
 	Keys(opts ...nats.WatchOpt) ([]string, error)
 }
 
-// KVStore is the exported test interface for the KV store.
-type KVStore = kvStore
-
 type cacheEntry struct {
 	sender    domain.Sender
 	expiresAt time.Time
 }
 
-// CacheEntry is exported for test access.
-type CacheEntry = cacheEntry
-
 // Store wraps the NATS KV bucket for sender configuration with an in-memory TTL cache.
 type Store struct {
-	Kv       kvStore
-	CacheTTL time.Duration
+	kv       KV
+	cacheTTL time.Duration
 
-	Mu    sync.RWMutex
-	Cache map[string]cacheEntry
+	mu    sync.RWMutex
+	cache map[string]cacheEntry
 }
 
-func New(kv nats.KeyValue, cacheTTL time.Duration) *Store {
+func New(kv KV, cacheTTL time.Duration) *Store {
 	return &Store{
-		Kv:       kv,
-		CacheTTL: cacheTTL,
-		Cache:    make(map[string]cacheEntry),
+		kv:       kv,
+		cacheTTL: cacheTTL,
+		cache:    make(map[string]cacheEntry),
 	}
 }
 
 func (s *Store) Get(appTag string) (domain.Sender, error) {
-	s.Mu.RLock()
-	entry, ok := s.Cache[appTag]
-	s.Mu.RUnlock()
+	s.mu.RLock()
+	entry, ok := s.cache[appTag]
+	s.mu.RUnlock()
 	if ok && time.Now().Before(entry.expiresAt) {
 		return entry.sender, nil
 	}
 
-	kve, err := s.Kv.Get(appTag)
+	kve, err := s.kv.Get(appTag)
 	if errors.Is(err, nats.ErrKeyNotFound) {
 		return domain.Sender{}, &domain.ValidationError{
 			Code:    domain.ErrUnknownAppTag,
@@ -72,9 +70,9 @@ func (s *Store) Get(appTag string) (domain.Sender, error) {
 		return domain.Sender{}, fmt.Errorf("sender unmarshal %s: %w", appTag, err)
 	}
 
-	s.Mu.Lock()
-	s.Cache[appTag] = CacheEntry{sender: sender, expiresAt: time.Now().Add(s.CacheTTL)}
-	s.Mu.Unlock()
+	s.mu.Lock()
+	s.cache[appTag] = cacheEntry{sender: sender, expiresAt: time.Now().Add(s.cacheTTL)}
+	s.mu.Unlock()
 
 	return sender, nil
 }
@@ -84,27 +82,27 @@ func (s *Store) Put(sender domain.Sender) error {
 	if err != nil {
 		return fmt.Errorf("sender marshal %s: %w", sender.AppTag, err)
 	}
-	if _, err := s.Kv.Put(sender.AppTag, data); err != nil {
+	if _, err := s.kv.Put(sender.AppTag, data); err != nil {
 		return fmt.Errorf("sender KV put %s: %w", sender.AppTag, err)
 	}
-	s.Mu.Lock()
-	delete(s.Cache, sender.AppTag)
-	s.Mu.Unlock()
+	s.mu.Lock()
+	delete(s.cache, sender.AppTag)
+	s.mu.Unlock()
 	return nil
 }
 
 func (s *Store) Delete(appTag string) error {
-	if err := s.Kv.Delete(appTag); err != nil {
+	if err := s.kv.Delete(appTag); err != nil {
 		return fmt.Errorf("sender KV delete %s: %w", appTag, err)
 	}
-	s.Mu.Lock()
-	delete(s.Cache, appTag)
-	s.Mu.Unlock()
+	s.mu.Lock()
+	delete(s.cache, appTag)
+	s.mu.Unlock()
 	return nil
 }
 
 func (s *Store) List() ([]domain.Sender, error) {
-	keys, err := s.Kv.Keys()
+	keys, err := s.kv.Keys()
 	if err != nil {
 		if errors.Is(err, nats.ErrNoKeysFound) {
 			return nil, nil
@@ -120,10 +118,4 @@ func (s *Store) List() ([]domain.Sender, error) {
 		senders = append(senders, sender)
 	}
 	return senders, nil
-}
-
-func (s *Store) InvalidateCache(appTag string) {
-	s.Mu.Lock()
-	delete(s.Cache, appTag)
-	s.Mu.Unlock()
 }

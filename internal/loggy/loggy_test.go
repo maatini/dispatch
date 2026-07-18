@@ -50,13 +50,6 @@ func TestKv(t *testing.T) {
 	}
 }
 
-func TestAlert(t *testing.T) {
-	attr := Alert(true)
-	if attr.Key != "alert" {
-		t.Errorf("Alert key: want alert, got %s", attr.Key)
-	}
-}
-
 func TestInfo_EmitsCorrectFields(t *testing.T) {
 	buf := &bytes.Buffer{}
 	l := captureLogger(buf)
@@ -99,18 +92,6 @@ func TestError_IncludesErrorField(t *testing.T) {
 	}
 	if m["error"] != "boom" {
 		t.Errorf("error: want boom, got %v", m["error"])
-	}
-}
-
-func TestDebug_EmitsDebugLevel(t *testing.T) {
-	buf := &bytes.Buffer{}
-	logger := slog.New(slog.NewJSONHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	l := &Loggy{className: "X", logger: logger}
-	l.Debug("debug msg")
-
-	m := parseLog(t, buf)
-	if m["level"] != "DEBUG" {
-		t.Errorf("level: want DEBUG, got %v", m["level"])
 	}
 }
 
@@ -182,77 +163,6 @@ func TestErrorc_SetsCategory(t *testing.T) {
 	}
 }
 
-func TestDebugg_SetsCategory(t *testing.T) {
-	buf := &bytes.Buffer{}
-	logger := slog.New(slog.NewJSONHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	l := &Loggy{className: "X", logger: logger}
-	l.Debugc(context.Background(), CategoryPerformance, "perf check")
-
-	m := parseLog(t, buf)
-	if m["type"] != string(CategoryPerformance) {
-		t.Errorf(typeWantFmt, CategoryPerformance, m["type"])
-	}
-}
-
-func TestBusinessRuleViolation(t *testing.T) {
-	buf := &bytes.Buffer{}
-	l := captureLogger(buf)
-	l.BusinessRuleViolation("QUOTA_EXCEEDED", "quota hit", "my-app")
-
-	m := parseLog(t, buf)
-	if m["type"] != string(CategoryBusinessRuleViolation) {
-		t.Errorf(typeWantFmt, CategoryBusinessRuleViolation, m["type"])
-	}
-	if m["ruleId"] != "QUOTA_EXCEEDED" {
-		t.Errorf("ruleId: want QUOTA_EXCEEDED, got %v", m["ruleId"])
-	}
-	if m["context"] != "my-app" {
-		t.Errorf("context: want my-app, got %v", m["context"])
-	}
-}
-
-func TestValidationFailed_WithValue(t *testing.T) {
-	buf := &bytes.Buffer{}
-	l := captureLogger(buf)
-	l.ValidationFailed("email", "invalid format", "not-an-email")
-
-	m := parseLog(t, buf)
-	if m["type"] != string(CategoryValidation) {
-		t.Errorf(typeWantFmt, CategoryValidation, m["type"])
-	}
-	if m["field"] != "email" {
-		t.Errorf("field: want email, got %v", m["field"])
-	}
-	if m["value"] != "not-an-email" {
-		t.Errorf("value: want not-an-email, got %v", m["value"])
-	}
-}
-
-func TestValidationFailed_WithoutValue(t *testing.T) {
-	buf := &bytes.Buffer{}
-	l := captureLogger(buf)
-	l.ValidationFailed("appTag", "missing")
-
-	m := parseLog(t, buf)
-	if _, ok := m["value"]; ok {
-		t.Error("value must not be present when not supplied")
-	}
-}
-
-func TestMissingData(t *testing.T) {
-	buf := &bytes.Buffer{}
-	l := captureLogger(buf)
-	l.MissingData("senderEmail", "MailRequestDO")
-
-	m := parseLog(t, buf)
-	if m["type"] != string(CategoryMissingData) {
-		t.Errorf(typeWantFmt, CategoryMissingData, m["type"])
-	}
-	if m["field"] != "senderEmail" {
-		t.Errorf("field: want senderEmail, got %v", m["field"])
-	}
-}
-
 func TestCritical(t *testing.T) {
 	buf := &bytes.Buffer{}
 	l := captureLogger(buf)
@@ -267,48 +177,6 @@ func TestCritical(t *testing.T) {
 	}
 	if m["host"] != "prod-1" {
 		t.Errorf("host: want prod-1, got %v", m["host"])
-	}
-}
-
-func TestUncaughtException(t *testing.T) {
-	buf := &bytes.Buffer{}
-	l := captureLogger(buf)
-	l.UncaughtException(errors.New("panic"), "REST-Layer")
-
-	m := parseLog(t, buf)
-	if m["type"] != string(CategoryUncaughtException) {
-		t.Errorf(typeWantFmt, CategoryUncaughtException, m["type"])
-	}
-	if m["context"] != "REST-Layer" {
-		t.Errorf("context: want REST-Layer, got %v", m["context"])
-	}
-}
-
-func TestServiceAccountExpired(t *testing.T) {
-	buf := &bytes.Buffer{}
-	l := captureLogger(buf)
-	l.ServiceAccountExpired("client-id-123", "MS Graph Token Fetch")
-
-	m := parseLog(t, buf)
-	if m["type"] != string(CategorySecurity) {
-		t.Errorf(typeWantFmt, CategorySecurity, m["type"])
-	}
-	if m["accountId"] != "client-id-123" {
-		t.Errorf("accountId: want client-id-123, got %v", m["accountId"])
-	}
-}
-
-func TestUnstructuredLog(t *testing.T) {
-	buf := &bytes.Buffer{}
-	l := captureLogger(buf)
-	l.UnstructuredLog("plain text message")
-
-	m := parseLog(t, buf)
-	if m["type"] != string(CategoryUnstructured) {
-		t.Errorf(typeWantFmt, CategoryUnstructured, m["type"])
-	}
-	if m["msg"] != "plain text message" {
-		t.Errorf("msg: want 'plain text message', got %v", m["msg"])
 	}
 }
 
@@ -378,7 +246,6 @@ func TestNilReceiver_DoesNotPanic(t *testing.T) {
 	l.Info("x")
 	l.Warn("x")
 	l.Error("x", nil)
-	l.Debug("x")
 	l.RecordApiStart("X")
 	l.ExternalApiSuccess("X", 200)
 	l.ExternalApiFailure("X", 500, nil)

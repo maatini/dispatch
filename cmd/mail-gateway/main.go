@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -10,6 +9,7 @@ import (
 
 	"dispatch/internal/config"
 	"dispatch/internal/gateway"
+	"dispatch/internal/httpsrv"
 	"dispatch/internal/loggy"
 	"dispatch/internal/natsutil"
 	"dispatch/internal/quota"
@@ -35,12 +35,8 @@ func main() {
 	defer nc.Close()
 
 	spamTTL := time.Duration(cfg.SpamTimeoutSeconds) * time.Second
-	if err := natsutil.ProvisionStreams(js); err != nil {
-		log.Critical("provision streams failed", err)
-		os.Exit(1)
-	}
-	if err := natsutil.ProvisionKVBuckets(js, spamTTL); err != nil {
-		log.Critical("provision KV buckets failed", err)
+	if err := natsutil.Setup(js, spamTTL); err != nil {
+		log.Critical("NATS setup failed", err)
 		os.Exit(1)
 	}
 	objStore, err := natsutil.ProvisionObjectStore(js)
@@ -65,7 +61,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	senderStore := sender.New(sendersKV, 10*time.Minute)
+	senderStore := sender.New(sendersKV, sender.DefaultCacheTTL)
 	quotaChecker := quota.NewChecker(quotaKV)
 	spamChecker := spam.NewChecker(spamKV)
 	publisher := gateway.NewNatsPublisher(js, cfg.NatsPublishTimeout)
@@ -73,29 +69,13 @@ func main() {
 
 	handler := gateway.NewHandler(cfg, senderStore, quotaChecker, spamChecker, publisher, attStore, nc.Status)
 
-	srv := &http.Server{
-		Addr:         ":" + cfg.Port,
-		Handler:      handler.Router(),
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-	}
-
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	go func() {
-		log.Info("mail-gateway started", loggy.Kv("version", version.Version), loggy.Kv("port", cfg.Port))
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Critical("server error", err)
-			os.Exit(1)
-		}
-	}()
-
-	<-ctx.Done()
-	log.Info("shutting down")
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Critical("shutdown error", err)
+	log.Info("mail-gateway started", loggy.Kv("version", version.Version), loggy.Kv("port", cfg.Port))
+	if err := httpsrv.Run(ctx, "mail-gateway", ":"+cfg.Port, handler.Router()); err != nil {
+		log.Critical("server error", err)
+		os.Exit(1)
 	}
+	log.Info("mail-gateway stopped")
 }

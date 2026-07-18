@@ -11,6 +11,7 @@ import (
 
 	"dispatch/internal/domain"
 	"dispatch/internal/sender"
+	"dispatch/internal/testkit"
 )
 
 func strPtr(s string) *string { return &s }
@@ -286,78 +287,23 @@ func TestReprocessDeadLetter_PublishError(t *testing.T) {
 	}
 }
 
-// Sender CRUD via mockKV
-
-type mockKVSender struct {
-	data   map[string][]byte
-	putErr error
-	delErr error
-}
-
-func newMockKVSender() *mockKVSender { return &mockKVSender{data: make(map[string][]byte)} }
-
-func (m *mockKVSender) Get(key string) (nats.KeyValueEntry, error) {
-	v, ok := m.data[key]
-	if !ok {
-		return nil, nats.ErrKeyNotFound
-	}
-	return &mockKVSenderEntry{value: v}, nil
-}
-
-func (m *mockKVSender) Put(key string, value []byte) (uint64, error) {
-	if m.putErr != nil {
-		return 0, m.putErr
-	}
-	m.data[key] = value
-	return 1, nil
-}
-
-func (m *mockKVSender) Create(key string, value []byte) (uint64, error) {
-	m.data[key] = value
-	return 1, nil
-}
-
-func (m *mockKVSender) Delete(key string, _ ...nats.DeleteOpt) error {
-	if m.delErr != nil {
-		return m.delErr
-	}
-	delete(m.data, key)
-	return nil
-}
-
-func (m *mockKVSender) Keys(_ ...nats.WatchOpt) ([]string, error) {
-	keys := make([]string, 0, len(m.data))
-	for k := range m.data {
-		keys = append(keys, k)
-	}
-	return keys, nil
-}
-
-type mockKVSenderEntry struct{ value []byte }
-
-func (e *mockKVSenderEntry) Bucket() string             { return "" }
-func (e *mockKVSenderEntry) Key() string                { return "" }
-func (e *mockKVSenderEntry) Value() []byte              { return e.value }
-func (e *mockKVSenderEntry) Revision() uint64           { return 0 }
-func (e *mockKVSenderEntry) Delta() uint64              { return 0 }
-func (e *mockKVSenderEntry) Created() time.Time         { return time.Time{} }
-func (e *mockKVSenderEntry) Operation() nats.KeyValueOp { return nats.KeyValuePut }
+// Sender CRUD via shared mock KV
 
 func senderBytes(s domain.Sender) []byte {
 	b, _ := json.Marshal(s)
 	return b
 }
 
-func newTestResolver(kv *mockKVSender) *Resolver {
-	return &Resolver{senders: &sender.Store{Kv: kv, Cache: make(map[string]sender.CacheEntry), CacheTTL: 10 * time.Minute}}
+func newTestResolver(kv *testkit.MockKV) *Resolver {
+	return &Resolver{senders: sender.New(kv, sender.DefaultCacheTTL)}
 }
 
 func TestSenders_List(t *testing.T) {
-	kv := newMockKVSender()
+	kv := testkit.NewMockKV()
 	s1 := domain.Sender{AppTag: "app1", Email: "a1@e.com"}
 	s2 := domain.Sender{AppTag: "app2", Email: "a2@e.com"}
-	kv.data["app1"] = senderBytes(s1)
-	kv.data["app2"] = senderBytes(s2)
+	kv.Data["app1"] = senderBytes(s1)
+	kv.Data["app2"] = senderBytes(s2)
 
 	r := newTestResolver(kv)
 	list, err := r.Senders(context.Background(), struct{ Filter *senderFilterArgs }{})
@@ -370,9 +316,9 @@ func TestSenders_List(t *testing.T) {
 }
 
 func TestSenders_ListWithAppTagFilter(t *testing.T) {
-	kv := newMockKVSender()
-	kv.data["app1"] = senderBytes(domain.Sender{AppTag: "app1", Email: "a1@e.com"})
-	kv.data["app2"] = senderBytes(domain.Sender{AppTag: "app2", Email: "a2@e.com"})
+	kv := testkit.NewMockKV()
+	kv.Data["app1"] = senderBytes(domain.Sender{AppTag: "app1", Email: "a1@e.com"})
+	kv.Data["app2"] = senderBytes(domain.Sender{AppTag: "app2", Email: "a2@e.com"})
 
 	r := newTestResolver(kv)
 	list, err := r.Senders(context.Background(), struct{ Filter *senderFilterArgs }{
@@ -390,7 +336,7 @@ func TestSenders_ListWithAppTagFilter(t *testing.T) {
 }
 
 func TestCreateSender_PutAndRoundtrip(t *testing.T) {
-	kv := newMockKVSender()
+	kv := testkit.NewMockKV()
 	r := newTestResolver(kv)
 
 	g, err := r.CreateSender(context.Background(), struct{ Input senderInputArgs }{
@@ -411,8 +357,8 @@ func TestCreateSender_PutAndRoundtrip(t *testing.T) {
 }
 
 func TestUpdateSender_AppTagFromPathOverridesInput(t *testing.T) {
-	kv := newMockKVSender()
-	kv.data["app-x"] = senderBytes(domain.Sender{AppTag: "app-x", Email: "old@e.com"})
+	kv := testkit.NewMockKV()
+	kv.Data["app-x"] = senderBytes(domain.Sender{AppTag: "app-x", Email: "old@e.com"})
 
 	r := newTestResolver(kv)
 	g, err := r.UpdateSender(context.Background(), struct {
@@ -434,8 +380,8 @@ func TestUpdateSender_AppTagFromPathOverridesInput(t *testing.T) {
 }
 
 func TestDeleteSender_TrueAndRemovesEntry(t *testing.T) {
-	kv := newMockKVSender()
-	kv.data["to-delete"] = senderBytes(domain.Sender{AppTag: "to-delete", Email: "d@e.com"})
+	kv := testkit.NewMockKV()
+	kv.Data["to-delete"] = senderBytes(domain.Sender{AppTag: "to-delete", Email: "d@e.com"})
 
 	r := newTestResolver(kv)
 	ok, err := r.DeleteSender(context.Background(), struct{ AppTag string }{AppTag: "to-delete"})
@@ -445,15 +391,15 @@ func TestDeleteSender_TrueAndRemovesEntry(t *testing.T) {
 	if !ok {
 		t.Error("DeleteSender must return true")
 	}
-	if _, exists := kv.data["to-delete"]; exists {
+	if _, exists := kv.Data["to-delete"]; exists {
 		t.Error("entry must be removed from KV")
 	}
 }
 
 func TestDeleteSender_KVError(t *testing.T) {
-	kv := newMockKVSender()
-	kv.delErr = errors.New("kv down")
-	kv.data["x"] = senderBytes(domain.Sender{AppTag: "x"})
+	kv := testkit.NewMockKV()
+	kv.DeleteErr = errors.New("kv down")
+	kv.Data["x"] = senderBytes(domain.Sender{AppTag: "x"})
 
 	r := newTestResolver(kv)
 	_, err := r.DeleteSender(context.Background(), struct{ AppTag string }{AppTag: "x"})
@@ -463,8 +409,8 @@ func TestDeleteSender_KVError(t *testing.T) {
 }
 
 func TestCreateSender_KVError(t *testing.T) {
-	kv := newMockKVSender()
-	kv.putErr = errors.New("kv full")
+	kv := testkit.NewMockKV()
+	kv.PutErr = errors.New("kv full")
 	r := newTestResolver(kv)
 
 	_, err := r.CreateSender(context.Background(), struct{ Input senderInputArgs }{

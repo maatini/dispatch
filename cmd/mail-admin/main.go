@@ -11,6 +11,7 @@ import (
 
 	"dispatch/internal/admin"
 	"dispatch/internal/config"
+	"dispatch/internal/httpsrv"
 	"dispatch/internal/loggy"
 	"dispatch/internal/natsutil"
 	"dispatch/internal/sender"
@@ -38,12 +39,8 @@ func main() {
 	defer nc.Close()
 
 	spamTTL := time.Duration(cfg.SpamTimeoutSeconds) * time.Second
-	if err := natsutil.ProvisionStreams(js); err != nil {
-		log.Critical("provision streams", err)
-		os.Exit(1)
-	}
-	if err := natsutil.ProvisionKVBuckets(js, spamTTL); err != nil {
-		log.Critical("provision KV", err)
+	if err := natsutil.Setup(js, spamTTL); err != nil {
+		log.Critical("NATS setup failed", err)
 		os.Exit(1)
 	}
 
@@ -53,7 +50,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	senderStore := sender.New(sendersKV, 10*time.Minute)
+	senderStore := sender.New(sendersKV, sender.DefaultCacheTTL)
 	resolver := admin.NewResolver(senderStore, js)
 
 	handler, err := admin.NewHTTPHandler(resolver)
@@ -69,26 +66,13 @@ func main() {
 		_, _ = w.Write([]byte(`{"status":"UP"}`))
 	})
 
-	srv := &http.Server{
-		Addr:         ":" + cfg.Port,
-		Handler:      mux,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-	}
-
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	go func() {
-		log.Info("mail-admin started", loggy.Kv("version", version.Version), loggy.Kv("port", cfg.Port))
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Critical("server error", err)
-			os.Exit(1)
-		}
-	}()
-
-	<-ctx.Done()
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	_ = srv.Shutdown(shutdownCtx)
+	log.Info("mail-admin started", loggy.Kv("version", version.Version), loggy.Kv("port", cfg.Port))
+	if err := httpsrv.Run(ctx, "mail-admin", ":"+cfg.Port, mux); err != nil {
+		log.Critical("server error", err)
+		os.Exit(1)
+	}
+	log.Info("mail-admin stopped")
 }

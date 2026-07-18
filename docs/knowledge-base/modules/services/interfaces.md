@@ -29,17 +29,18 @@ type kvStore interface {
 ```go
 type Store struct { ... }
 
-func New(kv nats.KeyValue, cacheTTL time.Duration) *Store
+const DefaultCacheTTL = 10 * time.Minute
+
+func New(kv KV, cacheTTL time.Duration) *Store
 func (s *Store) Get(appTag string) (domain.Sender, error)
 func (s *Store) Put(sender domain.Sender) error
 func (s *Store) Delete(appTag string) error
 func (s *Store) List() ([]domain.Sender, error)
-func (s *Store) InvalidateCache(appTag string)
 ```
 
-**KV store interface (consumer-side):**
+**KV store interface (exported, minimal):**
 ```go
-type kvStore interface {
+type KV interface {
     Get(key string) (nats.KeyValueEntry, error)
     Put(key string, value []byte) (uint64, error)
     Create(key string, value []byte) (uint64, error)

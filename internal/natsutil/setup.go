@@ -45,6 +45,17 @@ func Connect(url string) (*nats.Conn, nats.JetStreamContext, error) {
 	return nc, js, nil
 }
 
+// Setup provisions the streams and KV buckets shared by all services.
+func Setup(js nats.JetStreamContext, spamTTL time.Duration) error {
+	if err := ProvisionStreams(js); err != nil {
+		return fmt.Errorf("provision streams: %w", err)
+	}
+	if err := ProvisionKVBuckets(js, spamTTL); err != nil {
+		return fmt.Errorf("provision KV buckets: %w", err)
+	}
+	return nil
+}
+
 // ProvisionStreams ensures all required JetStream streams exist.
 func ProvisionStreams(js nats.JetStreamContext) error {
 	streams := []nats.StreamConfig{

@@ -22,7 +22,7 @@ devbox run down
 
 ## 2. Tech Stack & Environment
 
-- **Go 1.24** – single static binary per service
+- **Go 1.25** – single static binary per service
 - **NATS JetStream** – sole state backend (KV + Streams + Object Store)
 - **MS Graph API v1.0** – email delivery
 - `internal/loggy` – exclusive logging wrapper (never use `slog.*` or `fmt.Println` directly)
@@ -58,8 +58,6 @@ docs/               # architecture, ai-changes.md, coding-idioms.md
 - Logging: **exclusively** `loggy.GetLogger("ComponentName")` + semantic methods (`Info`, `Warnc`, `Critical`, `RecordApiStart` etc.)
 - PII: always mask with `pii.MaskEmail(addr)`
 - No `init()` functions, no global mutable state, no `context.Background()` deep in call stack
-
-**Extended examples:** `docs/coding-idioms.md`
 
 ## 6. Error Handling & Resilience
 

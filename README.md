@@ -134,9 +134,9 @@ DISPATCH_GRAPH_RATE_LIMITER_SKIP_SLEEP=true
 Der [Microsoft Graph Developer Proxy](https://learn.microsoft.com/en-us/microsoft-graph/msgraph-developer-proxy/overview) mockt alle genutzten Graph-Endpunkte lokal.
 
 ```bash
-devbox run up-proxy        # NATS + Dev Proxy (Port 8000) starten
-devbox run run-worker-dev  # Worker mit Mock-Token gegen Dev Proxy
-devbox run run-gateway-dev # Gateway mit Mock-Token gegen lokales NATS
+devbox run dev-proxy:up # NATS + Dev Proxy (Port 8000) starten
+devbox run worker-dev   # Worker mit Mock-Token gegen Dev Proxy
+devbox run gateway-dev  # Gateway mit Mock-Token gegen lokales NATS
 ```
 
 Die Proxy-Konfiguration liegt in [`dev-proxy/devproxyrc.json`](dev-proxy/devproxyrc.json), Mock-Antworten in [`dev-proxy/mocks.json`](dev-proxy/mocks.json).
@@ -163,7 +163,7 @@ devbox run sonar             # Coverage erzeugen + SonarQube-Scan
 
 | Metrik | Wert |
 |--------|------|
-| Unit-Tests | 254 |
+| Unit-Tests | 241 |
 | Mutation Score (alle Core-Packages) | 100 % Efficacy |
 | Mutation Score Threshold | ≥ 70 % (efficacy + mutation-coverage) |
 | SonarQube Quality Gate | PASSED |

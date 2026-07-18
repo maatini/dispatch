@@ -32,8 +32,7 @@ func (s *stubSenders) Get(_ string) (domain.Sender, error) { return s.sender, s.
 
 type stubQuota struct{ err error }
 
-func (s *stubQuota) Check(_ string, _, _ int) error     { return s.err }
-func (s *stubQuota) CurrentUsage(_ string) (int, error) { return 0, nil }
+func (s *stubQuota) Check(_ string, _, _ int) error { return s.err }
 
 type stubSpam struct{ err error }
 

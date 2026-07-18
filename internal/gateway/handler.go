@@ -27,7 +27,6 @@ type senderLookup interface {
 
 type quotaChecker interface {
 	Check(appTag string, limit, requested int) error
-	CurrentUsage(appTag string) (int, error)
 }
 
 type spamChecker interface {

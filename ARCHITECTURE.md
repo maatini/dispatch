@@ -348,9 +348,9 @@ MS_GRAPH_MOCK_TOKEN=          # Überspringt OAuth2, macht Credentials optional
 ## Entwicklungsumgebung
 
 ```bash
-devbox run up-proxy        # NATS + MS Graph Dev Proxy (Port 8000)
-devbox run run-worker-dev  # Worker ohne echte MS-Graph-Credentials
-devbox run run-gateway-dev # Gateway lokal
+devbox run dev-proxy:up # NATS + MS Graph Dev Proxy (Port 8000)
+devbox run worker-dev   # Worker ohne echte MS-Graph-Credentials
+devbox run gateway-dev  # Gateway lokal
 
 devbox run test            # Unit-Tests (kein Docker nötig)
 devbox run lint            # golangci-lint
