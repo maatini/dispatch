@@ -8,7 +8,8 @@
 | Stable architectural decision | `decisions.md` |
 | New @tag or coding pattern | `cross-cutting/` |
 | Pipeline / NATS topology diagrams | **root `ARCHITECTURE.md`** (not duplicated here) |
-| Recent AI edits | `docs/ai-changes.md` |
+| Recent AI edits | `docs/ai-changes.md` (append entry; update **Hot decisions** if MUST/ADR changed) |
+| Agent workflow / task router | root `CLAUDE.md` (§0 harness, §9 router) |
 
 ## Rules
 
@@ -16,6 +17,7 @@
 2. Do **not** re-copy pipeline diagrams from `ARCHITECTURE.md` — link instead.
 3. Ground gotchas in real code paths; mark uncertainty explicitly.
 4. One file per module under `modules/` (no multi-file folders).
+5. Keep `CLAUDE.md` ≤ ~130 lines; put depth in KB/ARCHITECTURE, not in the rules file.
 
 ## Related docs
 

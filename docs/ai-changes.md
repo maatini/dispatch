@@ -1,8 +1,20 @@
 # AI Changes Log – dispatch
 
-**Zweck:** Kurze, nachvollziehbare Dokumentation aller relevanten Änderungen durch Claude Code inklusive Begründung.  
-**Format:** Immer strikt einhalten. Maximal 5 Zeilen pro Eintrag.  
-**Pflicht:** Nach jeder nicht-trivialen Änderung einen Eintrag anhängen.
+**Zweck:** Kurze, nachvollziehbare Dokumentation aller relevanten AI-Änderungen inklusive Begründung.  
+**Format:** Immer strikt einhalten. Maximal 5 Zeilen pro Eintrag-Body.  
+**Pflicht:** Nach jeder nicht-trivialen Änderung einen Eintrag **anhängen**.  
+**Lesen:** Agents skim **Hot decisions** + last **5** entries only — full log only for forensics.
+
+---
+
+## Hot decisions (max ~10; update when MUST/ADR changes)
+
+- 2026-07-18: delivered KV **Get and Put** fail-closed (Put fail → no ACK; double-send worse than redelivery)
+- 2026-07-18: Worker **AckWait 5m / MaxDeliver 8 / InProgress**; Dedup Get **before** MaxDeliver gate
+- 2026-07-18: Gateway Bearer AuthN on `/mail/send`; Admin JWT **exp required**
+- 2026-07-18: NATS-only state; no PostgreSQL/Redis/SQLite
+- 2026-07-18: Spam fingerprint via `spam.Hash`; PII via `loggy.MaskEmail` (no separate hash/pii packages)
+- 2026-07-18: KB = one file per module; diagrams only in root `ARCHITECTURE.md`
 
 ---
 
@@ -178,3 +190,21 @@
 - CLAUDE/README/devbox mutate/skills an neue Pfade angepasst
 **Ergebnis:** `devbox run lint` 0 Issues; `devbox run test` grün.
 **Hinweis:** Keine Verhaltensänderung an HTTP/NATS/Graph.
+
+## 2026-07-18 — Agent-Steuerung: CLAUDE v2.5 + Hot decisions
+
+**Begründung:** Bewertung Systemprompt/Projekt-Rules (Score ~78): Domain stark, Harness-Noise (RTK/lean-ctx) und fehlender Task-Router schwächen Multi-Agent-Nutzung. Tier-A Docs-only.
+**Änderungen:**
+- `CLAUDE.md` v2.5 (§0 harness notes, §9 task router, Operability, slim §5→shared-patterns)
+- `docs/ai-changes.md` (Hot decisions Kopf; Read-last-5 Regel)
+- `docs/knowledge-base/maintenance.md` (CLAUDE/Hot-decisions Pflege)
+**Ergebnis:** Doc-only; kein Build/Test-Lauf nötig.
+**Hinweis:** Global `~/.claude` RTK/lean-ctx bleibt User-seitig optional zu bereinigen (B3, außer Repo).
+
+## 2026-07-18 — Grok rules: `.grok/rules/00-dispatch.md`
+
+**Begründung:** Tier B2 — Grok-spezifische Hinweise ohne CLAUDE.md aufzublähen; Plan-first für fail-closed/delivery-Pfade.
+**Änderungen:**
+- `.grok/rules/00-dispatch.md` (plan-first paths, tools, git, continuity)
+**Ergebnis:** Doc-only.
+**Hinweis:** Canonical remains `CLAUDE.md`; this file does not duplicate MUST invariants.
