@@ -216,3 +216,13 @@
 - `internal/version/version.go`, `Dockerfile`, `.github/workflows/build.yml` (`0.5.0` → `0.6.0`)
 - GitHub Release `v0.6.0` mit Release Notes
 **Ergebnis:** Version-Bump; Release über `gh release create`.
+
+## 2026-08-18 — CI-Fix: Go 1.26.6 (govulncheck + Trivy stdlib-CVEs)
+
+**Begründung:** Weekly Security-Run 31997859586 war rot: govulncheck und alle 4 Trivy-Jobs fanden HIGH-Stdlib-CVEs in go1.26.5 (u. a. CVE-2026-56862/56860/56853/33818, CVE-2026-39821/46600); alle in go1.26.6 behoben.
+**Änderungen:**
+- `go.mod` (toolchain go1.26.5 → go1.26.6)
+- `.github/workflows/{build,security,integration}.yml` (setup-go 1.26.6)
+- `Dockerfile` (`golang:1.26-alpine` Digest auf 1.26.6-Image), `docs/knowledge-base/overview.md`
+**Ergebnis:** `devbox run lint` 0 Issues; `devbox run test` grün; `govulncheck ./...` → 0 affecting.
+**Hinweis:** Security-Trivy scannt GHCR-`:latest` — nach Push auf main erst nach erfolgreichem `build.yml`-Image-Push wieder grün.
