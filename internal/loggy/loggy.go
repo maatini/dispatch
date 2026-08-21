@@ -69,11 +69,90 @@ func (l *Loggy) With(attrs ...slog.Attr) *Loggy {
 	return &Loggy{className: l.className, logger: l.logger, extra: extra}
 }
 
+type traceKey struct{}
+
+// Trace is request-scoped correlation stored on context.
+type Trace struct {
+	TraceID string
+	Fields  map[string]string
+}
+
+// Context returns ctx with TraceID and optional W3C fields for logs and Graph headers.
+func Context(ctx context.Context, traceID string, fields map[string]string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	t := Trace{TraceID: traceID}
+	if len(fields) > 0 {
+		t.Fields = make(map[string]string, len(fields))
+		for k, v := range fields {
+			t.Fields[k] = v
+		}
+	}
+	return context.WithValue(ctx, traceKey{}, t)
+}
+
+// TraceFrom returns the Trace stored by Context, if any.
+func TraceFrom(ctx context.Context) (Trace, bool) {
+	if ctx == nil {
+		return Trace{}, false
+	}
+	t, ok := ctx.Value(traceKey{}).(Trace)
+	return t, ok
+}
+
+// WithContext returns a logger with traceId and W3C fields from ctx attached.
+func (l *Loggy) WithContext(ctx context.Context) *Loggy {
+	t, ok := TraceFrom(ctx)
+	if !ok {
+		return l
+	}
+	attrs := make([]slog.Attr, 0, 1+len(t.Fields))
+	if t.TraceID != "" {
+		attrs = append(attrs, Kv("traceId", t.TraceID))
+	}
+	for k, v := range t.Fields {
+		attrs = append(attrs, Kv(k, v))
+	}
+	if len(attrs) == 0 {
+		return l
+	}
+	return l.With(attrs...)
+}
+
+func appendTraceAttrs(ctx context.Context, attrs []slog.Attr) []slog.Attr {
+	t, ok := TraceFrom(ctx)
+	if !ok {
+		return attrs
+	}
+	if t.TraceID != "" && !attrHasKey(attrs, "traceId") {
+		attrs = append(attrs, slog.String("traceId", t.TraceID))
+	}
+	for k, v := range t.Fields {
+		if k != "" && !attrHasKey(attrs, k) {
+			attrs = append(attrs, slog.String(k, v))
+		}
+	}
+	return attrs
+}
+
+func attrHasKey(attrs []slog.Attr, key string) bool {
+	for _, a := range attrs {
+		if a.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
 func (l *Loggy) emit(ctx context.Context, level slog.Level, category LogCategory, msg string, err error, fields ...slog.Attr) {
 	if l == nil {
 		return
 	}
-	attrs := make([]slog.Attr, 0, 2+len(l.extra)+len(fields)+1)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	attrs := make([]slog.Attr, 0, 4+len(l.extra)+len(fields)+1)
 	attrs = append(attrs, slog.String("logger", l.className))
 	if category != "" {
 		attrs = append(attrs, slog.String("type", string(category)))
@@ -83,6 +162,7 @@ func (l *Loggy) emit(ctx context.Context, level slog.Level, category LogCategory
 	if err != nil {
 		attrs = append(attrs, slog.String("error", err.Error()))
 	}
+	attrs = appendTraceAttrs(ctx, attrs)
 	l.logger.LogAttrs(ctx, level, msg, attrs...)
 }
 
@@ -133,7 +213,7 @@ func (l *Loggy) RecordApiStart(apiName string) {
 
 // ExternalApiSuccess logs a successful external API call at INFO level,
 // computing latency from the prior RecordApiStart.
-func (l *Loggy) ExternalApiSuccess(apiName string, httpStatus int) {
+func (l *Loggy) ExternalApiSuccess(ctx context.Context, apiName string, httpStatus int) {
 	if l == nil {
 		return
 	}
@@ -141,14 +221,14 @@ func (l *Loggy) ExternalApiSuccess(apiName string, httpStatus int) {
 	if v, ok := l.apiStart.LoadAndDelete(apiName); ok {
 		durationMs = time.Since(v.(time.Time)).Milliseconds()
 	}
-	l.emit(context.Background(), slog.LevelInfo, CategoryAPIRequest, apiName+" success", nil,
+	l.emit(ctx, slog.LevelInfo, CategoryAPIRequest, apiName+" success", nil,
 		slog.Int("httpStatus", httpStatus),
 		slog.Int64("durationMs", durationMs),
 	)
 }
 
 // ExternalApiFailure logs a failed external API call (5xx / network) at ERROR level.
-func (l *Loggy) ExternalApiFailure(apiName string, httpStatus int, err error) {
+func (l *Loggy) ExternalApiFailure(ctx context.Context, apiName string, httpStatus int, err error) {
 	if l == nil {
 		return
 	}
@@ -156,14 +236,14 @@ func (l *Loggy) ExternalApiFailure(apiName string, httpStatus int, err error) {
 	if v, ok := l.apiStart.LoadAndDelete(apiName); ok {
 		durationMs = time.Since(v.(time.Time)).Milliseconds()
 	}
-	l.emit(context.Background(), slog.LevelError, CategoryAPIExternalFailure, apiName+" failure", err,
+	l.emit(ctx, slog.LevelError, CategoryAPIExternalFailure, apiName+" failure", err,
 		slog.Int("httpStatus", httpStatus),
 		slog.Int64("durationMs", durationMs),
 	)
 }
 
 // ApiClientError logs a 4xx client error against an external API at WARN level.
-func (l *Loggy) ApiClientError(apiName string, httpStatus int, reason string) {
+func (l *Loggy) ApiClientError(ctx context.Context, apiName string, httpStatus int, reason string) {
 	if l == nil {
 		return
 	}
@@ -171,7 +251,7 @@ func (l *Loggy) ApiClientError(apiName string, httpStatus int, reason string) {
 	if v, ok := l.apiStart.LoadAndDelete(apiName); ok {
 		durationMs = time.Since(v.(time.Time)).Milliseconds()
 	}
-	l.emit(context.Background(), slog.LevelWarn, CategoryAPIClientError, apiName+" client error", nil,
+	l.emit(ctx, slog.LevelWarn, CategoryAPIClientError, apiName+" client error", nil,
 		slog.Int("httpStatus", httpStatus),
 		slog.Int64("durationMs", durationMs),
 		slog.String("reason", reason),

@@ -183,7 +183,7 @@ func TestAPITracking_SuccessRecordsDuration(t *testing.T) {
 	l := captureLogger(buf)
 	l.RecordApiStart("MS_GRAPH")
 	time.Sleep(2 * time.Millisecond)
-	l.ExternalApiSuccess("MS_GRAPH", 202)
+	l.ExternalApiSuccess(context.Background(), "MS_GRAPH", 202)
 
 	m := parseLog(t, buf)
 	if m["type"] != string(CategoryAPIRequest) {
@@ -201,7 +201,7 @@ func TestAPITracking_FailureRecordsDuration(t *testing.T) {
 	buf := &bytes.Buffer{}
 	l := captureLogger(buf)
 	l.RecordApiStart("MS_GRAPH")
-	l.ExternalApiFailure("MS_GRAPH", 503, errors.New("timeout"))
+	l.ExternalApiFailure(context.Background(), "MS_GRAPH", 503, errors.New("timeout"))
 
 	m := parseLog(t, buf)
 	if m["type"] != string(CategoryAPIExternalFailure) {
@@ -216,7 +216,7 @@ func TestAPITracking_ClientError(t *testing.T) {
 	buf := &bytes.Buffer{}
 	l := captureLogger(buf)
 	l.RecordApiStart("MS_GRAPH")
-	l.ApiClientError("MS_GRAPH", 429, "throttled")
+	l.ApiClientError(context.Background(), "MS_GRAPH", 429, "throttled")
 
 	m := parseLog(t, buf)
 	if m["type"] != string(CategoryAPIClientError) {
@@ -230,7 +230,7 @@ func TestAPITracking_ClientError(t *testing.T) {
 func TestAPITracking_SuccessWithoutStartReturnsZeroDuration(t *testing.T) {
 	buf := &bytes.Buffer{}
 	l := captureLogger(buf)
-	l.ExternalApiSuccess("UNTRACKED", 200) // no RecordApiStart called
+	l.ExternalApiSuccess(context.Background(), "UNTRACKED", 200) // no RecordApiStart called
 
 	m := parseLog(t, buf)
 	if m["durationMs"] != float64(0) {
@@ -245,9 +245,10 @@ func TestNilReceiver_DoesNotPanic(t *testing.T) {
 	l.Warn("x")
 	l.Error("x", nil)
 	l.RecordApiStart("X")
-	l.ExternalApiSuccess("X", 200)
-	l.ExternalApiFailure("X", 500, nil)
-	l.ApiClientError("X", 429, "r")
+	l.ExternalApiSuccess(context.Background(), "X", 200)
+	l.ExternalApiFailure(context.Background(), "X", 500, nil)
+	l.ApiClientError(context.Background(), "X", 429, "r")
+	_ = l.WithContext(context.Background())
 }
 
 func TestGetLogger_WritesToStdout(t *testing.T) {
@@ -291,6 +292,74 @@ func TestGetLogger_DefaultHandlerIsJSONToStdout(t *testing.T) {
 		t.Error("loggy logger must be independent of slog.Default()")
 	}
 	_ = os.Stdout // reference to ensure import is used
+}
+
+func TestContext_EmitAddsTraceFields(t *testing.T) {
+	buf := &bytes.Buffer{}
+	l := captureLogger(buf)
+	ctx := Context(context.Background(), "tid-1", map[string]string{"traceparent": "00-aa"})
+	l.Infoc(ctx, CategoryBusinessLogic, "with ctx")
+
+	m := parseLog(t, buf)
+	if m["traceId"] != "tid-1" {
+		t.Errorf("traceId: want tid-1, got %v", m["traceId"])
+	}
+	if m["traceparent"] != "00-aa" {
+		t.Errorf("traceparent: want 00-aa, got %v", m["traceparent"])
+	}
+}
+
+func TestWithContext_AttachesFieldsToInfo(t *testing.T) {
+	buf := &bytes.Buffer{}
+	l := captureLogger(buf)
+	ctx := Context(context.Background(), "tid-2", nil)
+	l.WithContext(ctx).Info("no ctx arg")
+
+	m := parseLog(t, buf)
+	if m["traceId"] != "tid-2" {
+		t.Errorf("traceId: want tid-2, got %v", m["traceId"])
+	}
+}
+
+func TestContext_DoesNotDuplicateTraceID(t *testing.T) {
+	buf := &bytes.Buffer{}
+	l := captureLogger(buf)
+	ctx := Context(context.Background(), "from-ctx", nil)
+	l.Infoc(ctx, CategoryInfo, "msg", Kv("traceId", "explicit"))
+
+	m := parseLog(t, buf)
+	if m["traceId"] != "explicit" {
+		t.Errorf("explicit traceId must win, got %v", m["traceId"])
+	}
+}
+
+func TestContext_NilCtxAndEmptyFields(t *testing.T) {
+	ctx := Context(nil, "tid", nil) //nolint:staticcheck // nil ctx is the contract
+	t1, ok := TraceFrom(ctx)
+	if !ok || t1.TraceID != "tid" {
+		t.Fatalf("nil ctx: got %+v ok=%v", t1, ok)
+	}
+	if _, ok := TraceFrom(nil); ok { //nolint:staticcheck
+		t.Error("TraceFrom(nil) must be false")
+	}
+
+	buf := &bytes.Buffer{}
+	l := captureLogger(buf)
+	if got := l.WithContext(context.Background()); got != l {
+		t.Error("WithContext without trace must return same logger")
+	}
+	empty := Context(context.Background(), "", nil)
+	if got := l.WithContext(empty); got != l {
+		t.Error("WithContext empty trace must return same logger")
+	}
+	onlyFields := Context(context.Background(), "", map[string]string{"traceparent": "tp"})
+	if got := l.WithContext(onlyFields); got == l {
+		t.Error("WithContext with fields must return derived logger")
+	}
+	l.emit(nil, slog.LevelInfo, CategoryInfo, "nil-ctx-emit", nil) //nolint:staticcheck
+	if buf.Len() == 0 {
+		t.Error("emit with nil ctx must still log")
+	}
 }
 
 func TestMaskEmail(t *testing.T) {

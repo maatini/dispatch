@@ -7,6 +7,8 @@
 
 - `POST /graphql` — JWT HMAC auth (`DISPATCH_ADMIN_AUTH_SECRET`); `exp` **required** (`jwt.WithExpirationRequired`)
 - `GET /health` — **outside** auth middleware (probes)
+- `GET /metrics` — Prometheus scrape, unauthenticated (like health)
+- `MailRecord.traceContext` — optional JSON string of the W3C allowlist from audit
 - Queries: `senders`, `mails`, `bounces`, `deadLetters` (in-memory page after full stream scan)
 - Mutations: `createSender` / `updateSender` / `deleteSender`, `reprocessDeadLetter`
 

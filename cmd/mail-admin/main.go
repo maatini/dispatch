@@ -13,6 +13,7 @@ import (
 	"dispatch/internal/config"
 	"dispatch/internal/httpsrv"
 	"dispatch/internal/loggy"
+	"dispatch/internal/metrics"
 	"dispatch/internal/natsutil"
 	"dispatch/internal/sender"
 	"dispatch/internal/version"
@@ -61,6 +62,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("/graphql", admin.AuthMiddleware(cfg.AdminAuthSecret)(handler))
+	mux.Handle("/metrics", metrics.Handler())
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"UP"}`))

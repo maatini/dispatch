@@ -2,7 +2,7 @@
 
 ![Build Status](https://img.shields.io/github/actions/workflow/status/maatini/dispatch/build.yml?branch=main)
 ![Go Version](https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go)
-![Tests](https://img.shields.io/badge/tests-251-brightgreen)
+![Tests](https://img.shields.io/badge/tests-265-brightgreen)
 ![Quality Gate](https://img.shields.io/badge/quality_gate-PASSED-brightgreen?logo=sonarqube)
 
 <div align="center">
@@ -55,9 +55,9 @@ Eine detaillierte Architekturbeschreibung mit Datenfluss-Diagrammen und NATS-Top
 | Service | Endpunkt | Zweck |
 |---------|----------|-------|
 | `cmd/mail-gateway` | `POST /dispatch/api/v1/mail/send` | HTTP-Eingang, Validierung, Publish |
-| `cmd/mail-worker` | — | NATS-Consumer, MS-Graph-Delivery |
+| `cmd/mail-worker` | `GET /metrics` on `PORT` | NATS-Consumer, MS-Graph-Delivery |
 | `cmd/mail-admin` | `POST /graphql` | Sender-CRUD, Audit-Abfragen |
-| `cmd/bouncemanagement` | — | NDR-Crawler, Bounce-Aufzeichnung |
+| `cmd/bouncemanagement` | `GET /metrics` on `PORT` | NDR-Crawler, Bounce-Aufzeichnung |
 
 ## NATS-Ressourcen
 
@@ -169,31 +169,32 @@ devbox run sonar             # Coverage erzeugen + SonarQube-Scan
 
 | Metrik | Wert |
 |--------|------|
-| Unit-Tests | 251 PASS (1 SKIP: `TestConnect_InvalidURL` wenn Port 1 erreichbar) |
-| Mutation Score Threshold | ≥ 70 % (efficacy + mutation-coverage in `.gremlins.yaml`) |
+| Unit-Tests | 321 PASS (1 SKIP: `TestConnect_InvalidURL` wenn Port 1 erreichbar) |
+| Mutation Score Threshold | ≥ 70 % (efficacy + mutant-coverage in `.gremlins.yaml`) |
 | SonarQube Quality Gate | siehe Dashboard |
 
 Zahlen veralten — Quelle der Wahrheit: `devbox run test` / `devbox run coverage`.
 
-**Coverage pro Package** (Unit-Tests, kein NATS/Docker):
+**Coverage pro Package** (Unit-Tests; Core-Pakete nutzen Embedded-JetStream, kein Docker):
 
 | Package | Coverage | Anmerkung |
 |---------|---------|-----------|
-| `internal/admin` | 55 % | Stream-Resolver (`Mails`/`Bounces`/`DeadLetters`) nur via Integration |
+| `internal/admin` | 56 % | Stream-Resolver (`Mails`/`Bounces`/`DeadLetters`) nur via Integration |
 | `internal/bounce` | 93 % | |
 | `internal/config` | 98 % | |
-| `internal/domain` | 75 % | |
-| `internal/gateway` | 80 % | `AttachmentStore.Upload` nur via Integration |
+| `internal/domain` | 93 % | inkl. `SanitizeTraceContext` |
+| `internal/gateway` | 88 % | `AttachmentStore.Upload`, Auth-Kanten, Quota TO+CC+BCC |
 | `internal/httpsrv` | 94 % | |
-| `internal/loggy` | 100 % | inkl. `MaskEmail` |
+| `internal/loggy` | 100 % | inkl. `MaskEmail`, `Context`/`WithContext` |
+| `internal/metrics` | 100 % | Prometheus counters/histograms + `/metrics` |
 | `internal/msgraph` | 92 % | Konstruktoren ungetestet; Send-Pfade über HTTP-Stubs |
-| `internal/natsutil` | 73 % | `Setup`/`Connect` dünn; KV-TTL-Reconcile getestet |
-| `internal/quota` | 80 % | `defaultCASPause` (echtes Sleep) ungetestet; Pause-Hook schon |
+| `internal/natsutil` | 77 % | `Connect`/`Setup` gegen Embedded-Server; KV-TTL-Reconcile |
+| `internal/quota` | 86 % | Exact-Limit, 24h-Cutoff, CAS gegen Embedded-NATS |
 | `internal/sender` | 91 % | |
-| `internal/spam` | 89 % | `NewChecker` ungetestet; `Hash`/`Check` 100 % |
-| `internal/worker` | 73 % | `Consumer.Run` nur via Integration |
+| `internal/spam` | 100 % | |
+| `internal/worker` | 94 % | `Consumer.Run` / InProgress / Term gegen Embedded-JetStream |
 
-Mutation-Tests laufen mit [gremlins](https://github.com/go-gremlins/gremlins) via `devbox run mutate` auf `internal/{gateway,quota,spam,worker,loggy,msgraph}`. Schwellwerte: [`.gremlins.yaml`](.gremlins.yaml).
+Mutation-Tests laufen mit [gremlins](https://github.com/go-gremlins/gremlins) via `devbox run mutate` auf `internal/{gateway,quota,spam,worker,loggy,msgraph}`. Schwellwerte: [`.gremlins.yaml`](.gremlins.yaml) (`mutants.<name>.enabled`; `invert-logical` an).
 
 Statische Code-Analyse via [SonarQube](http://10.27.27.202:9000/dashboard?id=dispatch). Token wird aus `.env` geladen (`SONAR_TOKEN=sqp_...`), nie im Repository gespeichert.
 
@@ -246,7 +247,10 @@ Authorization: Bearer <DISPATCH_GATEWAY_AUTH_TOKEN>
 GET /health        → {"status":"UP","checks":[...]}
 GET /health/live   → 200
 GET /health/ready  → 200
+GET /metrics       → Prometheus (ohne Auth, wie Health)
 ```
+
+Worker und Bounce binden `PORT` (Default 8080) nur für `/metrics` und `/health`. Gateway/Admin hängen `/metrics` an denselben HTTP-Server.
 
 ### Admin GraphQL
 
@@ -274,7 +278,7 @@ mutation {
 query {
   mails(filter: { appTag: "sunshine-app", status: "DELIVERED" }, page: 0, size: 20) {
     total
-    items { traceId status timestamp recipients }
+    items { traceId status timestamp recipients traceContext }
   }
 }
 ```

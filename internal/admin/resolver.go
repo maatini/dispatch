@@ -261,24 +261,26 @@ func (s *senderGQL) DailyQuota() int32       { return s.dailyQuota }
 func (s *senderGQL) AllowedDomains() *string { return s.allowedDomains }
 
 type mailRecordGQL struct {
-	traceID    string
-	appTag     string
-	status     string
-	sender     string
-	subject    *string
-	recipients []string
-	erro       *string
-	timestamp  string
+	traceID      string
+	appTag       string
+	status       string
+	sender       string
+	subject      *string
+	recipients   []string
+	erro         *string
+	timestamp    string
+	traceContext *string
 }
 
-func (m *mailRecordGQL) TraceId() string      { return m.traceID }
-func (m *mailRecordGQL) AppTag() string       { return m.appTag }
-func (m *mailRecordGQL) Status() string       { return m.status }
-func (m *mailRecordGQL) Sender() string       { return m.sender }
-func (m *mailRecordGQL) Subject() *string     { return m.subject }
-func (m *mailRecordGQL) Recipients() []string { return m.recipients }
-func (m *mailRecordGQL) Error() *string       { return m.erro }
-func (m *mailRecordGQL) Timestamp() string    { return m.timestamp }
+func (m *mailRecordGQL) TraceId() string       { return m.traceID }
+func (m *mailRecordGQL) AppTag() string        { return m.appTag }
+func (m *mailRecordGQL) Status() string        { return m.status }
+func (m *mailRecordGQL) Sender() string        { return m.sender }
+func (m *mailRecordGQL) Subject() *string      { return m.subject }
+func (m *mailRecordGQL) Recipients() []string  { return m.recipients }
+func (m *mailRecordGQL) Error() *string        { return m.erro }
+func (m *mailRecordGQL) Timestamp() string     { return m.timestamp }
+func (m *mailRecordGQL) TraceContext() *string { return m.traceContext }
 
 type bounceRecordGQL struct {
 	originalTraceID  string
@@ -368,6 +370,12 @@ func toMailRecordGQL(r domain.AuditRecord) *mailRecordGQL {
 	}
 	if r.Error != "" {
 		g.erro = &r.Error
+	}
+	if len(r.TraceContext) > 0 {
+		if b, err := json.Marshal(r.TraceContext); err == nil {
+			s := string(b)
+			g.traceContext = &s
+		}
 	}
 	return g
 }

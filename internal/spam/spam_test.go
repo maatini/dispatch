@@ -25,6 +25,11 @@ func TestHash(t *testing.T) {
 		t.Error("different body length must produce different hash")
 	}
 
+	hHTML := Hash(hashTestAppTag, "Hello", []string{hashTestEmail}, 100, 1)
+	if h1 == hHTML {
+		t.Error("different html body length must produce different hash")
+	}
+
 	h4 := Hash("other-tag", "Hello", []string{hashTestEmail}, 100, 0)
 	if h1 == h4 {
 		t.Error("different appTag must produce different hash")
@@ -74,5 +79,19 @@ func TestCheck_KVCreateError(t *testing.T) {
 	var valErr *domain.ValidationError
 	if errors.As(err, &valErr) {
 		t.Errorf("KV failure must not surface as ValidationError, got %v", valErr)
+	}
+	var stateErr *domain.SpamStateError
+	if !errors.As(err, &stateErr) {
+		t.Fatalf("KV create failure must be SpamStateError, got %T: %v", err, err)
+	}
+}
+
+func TestNewChecker(t *testing.T) {
+	c := NewChecker(nil)
+	if c == nil {
+		t.Fatal("NewChecker must return a Checker")
+	}
+	if c.kv != nil {
+		t.Error("nil KV must be stored as-is")
 	}
 }

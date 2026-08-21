@@ -6,6 +6,7 @@
 ## Behavior
 
 - Runs once on startup, then every 15 minutes.
+- Serves `GET /metrics` and `/health` on `PORT` (default 8080).
 - Uses `msgraph.BounceService` (not send `Service`); same underlying Graph `Client`.
 - Per-message isolation: process failure → leave unread for retry; never block batch.
 - Trace header regex: `X-Dispatch-TraceId` UUID (set on outbound Graph messages).

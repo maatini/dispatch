@@ -1,13 +1,31 @@
-timeout-coefficient: 20
-
-threshold:
-  efficacy: 70
-  mutation-coverage: 70
+# Gremlins v0.6 — keys must be mutants.<name>.enabled (see gremlins.dev/0.6).
+# invert-loopctrl / invert-assignments stay off: they hang on Object-Store loops.
+unleash:
+  timeout-coefficient: 20
+  threshold:
+    efficacy: 70
+    mutant-coverage: 70
 
 mutants:
-  arithmetic-base: true
-  conditionals-boundary: true
-  conditionals-negation: true
-  increment-decrement: true
-  invert-assignments: true
-  invert-negation: true
+  arithmetic-base:
+    enabled: true
+  conditionals-boundary:
+    enabled: true
+  conditionals-negation:
+    enabled: true
+  increment-decrement:
+    enabled: true
+  invert-negatives:
+    enabled: true
+  invert-logical:
+    enabled: true
+  invert-assignments:
+    enabled: false
+  invert-bitwise:
+    enabled: false
+  invert-bwassign:
+    enabled: false
+  invert-loopctrl:
+    enabled: false
+  remove-self-assignments:
+    enabled: false

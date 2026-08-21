@@ -287,11 +287,17 @@ log.ApiClientError("MS_GRAPH", 429, "throttled")
 ### Kontext-angereicherte Logger
 
 ```go
-// Einmal ableiten, überall nutzen — mutiert den Basis-Logger nicht:
-reqLog := procLog.With(loggy.Kv("traceId", traceID))
+ctx := loggy.Context(ctx, traceID, req.TraceContext)
+reqLog := procLog.WithContext(ctx)
 reqLog.Info("processing mail")
 reqLog.Warn("retry", loggy.Kv("attempt", n))
 ```
+
+`traceContext` aus dem Send-Request wird auf W3C `traceparent`/`tracestate` reduziert. Audit und MS Graph (`client-request-id`, W3C-Header) bekommen dieselben Felder.
+
+### Prometheus
+
+`GET /metrics` (ohne Auth, wie Health): Gateway und Admin am bestehenden Server; Worker und Bounce auf `PORT`. Zähler/Histogramme: Gateway-Send, Worker-Handle, Graph-HTTP, Worker-Queue (`NumPending`).
 
 ---
 
@@ -339,7 +345,7 @@ DISPATCH_GATEWAY_AUTH_TOKEN  # Bearer für POST /mail/send (nur mail-gateway; Pf
 
 **Optionale Felder (Auswahl):**
 ```
-PORT=8080
+PORT=8080                     # HTTP für gateway/admin; worker/bounce: /metrics + /health
 DISPATCH_SPAM_TIMEOUT_SECONDS=60
 DISPATCH_VALIDATION_MAX_BODY_SIZE=10000000
 DISPATCH_MAX_TOTAL_ATTACHMENT_SIZE_MB=20

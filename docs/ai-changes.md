@@ -9,6 +9,7 @@
 
 ## Hot decisions (max ~10; update when MUST/ADR changes)
 
+- 2026-08-21: `/metrics` unauthenticated (wie Health); `traceContext` nur W3C `traceparent`/`tracestate`; Graph `client-request-id` = dispatch traceId
 - 2026-08-21: Worker **Fetch(1)** (AckWait nur für in-flight msg); KV-Bucket **TTL reconcile** on Setup; sender cache **30s**
 - 2026-07-18: delivered KV **Get and Put** fail-closed (Put fail → no ACK; double-send worse than redelivery)
 - 2026-07-18: Worker **AckWait 5m / MaxDeliver 8 / InProgress**; Dedup Get **before** MaxDeliver gate
@@ -248,3 +249,24 @@
 - `improvements.md` (#21 Graph nextLink, #22 Object-Store TTL; #12/#18 präzisiert)
 **Ergebnis:** `devbox run lint` 0 Issues; `devbox run test` grün.
 **Hinweis:** Historische 241/249 in älteren Log-Einträgen bleiben als Audit-Trail.
+
+## 2026-08-21 — #12 Prometheus + traceContext (Logs/Audit/Graph)
+
+**Begründung:** Keine Queue-/Latenz-Metriken; `traceContext` wurde nur im JSON durchgereicht, nicht in Logs/Audit/Graph. Fail-closed-Pfade unverändert.
+**Änderungen:**
+- `internal/metrics/` (Prometheus; `/metrics` Gateway/Admin; Worker/Bounce auf `PORT`)
+- `internal/loggy` (`Context`/`WithContext`; ExternalApi* nimmt ctx); `domain.SanitizeTraceContext` (nur W3C)
+- Gateway/Worker/MS Graph: sanitize, Audit-Feld, `client-request-id` + W3C-Header; Admin `MailRecord.traceContext`
+- `improvements.md` #12 umgesetzt; README/ARCHITECTURE/KB
+**Ergebnis:** `devbox run lint` 0 Issues; `devbox run test` → 265 PASS, 1 SKIP.
+**Hinweis:** **DESIGN-DECISION** `/metrics` unauthenticated wie Health; `traceContext` Allowlist `traceparent`/`tracestate` (kein Header-Injection). Worker/Bounce binden `PORT` für Scrapes.
+
+## 2026-08-21 — Produktions-Tests: Coverage, Mutation-Gate, Integration-CI
+
+**Begründung:** Suite war für Fail-closed-Invarianten gut, als Release-Gate aber lückenhaft: `.gremlins.yaml` ignorierte Mutatoren, Quota-Exact-Limit/Cutoff ungetestet, `Consumer.Run` 0 %, Integration nicht auf PRs.
+**Änderungen:**
+- `.gremlins.yaml` (v0.6-Schema `mutants.<name>.enabled`; `invert-logical` an; Thresholds unter `unleash`)
+- Quota/Worker/Gateway/Spam/natsutil-Tests (Exact-Limit, Embedded-NATS CAS, `Consumer.Run`, Upload, Auth-Kanten)
+- `.github/workflows/integration.yml` (`pull_request`); Integration `Consumer.Run` nutzt jetzt wirklich `Run`
+**Ergebnis:** `devbox run lint` 0 Issues; `devbox run test` → 321 PASS, 1 SKIP; `devbox run test-integration` grün.
+**Hinweis:** Worker 94 %, Gateway 88 %, Quota 86 %, Spam 100 %. `devbox run mutate` ist wieder ein echtes Gate.

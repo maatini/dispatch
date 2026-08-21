@@ -6,8 +6,9 @@
 
 | Type | Role |
 |------|------|
-| `MailRequest` | HTTP API model (base64 attach, validate tags) |
+| `MailRequest` | HTTP API model (base64 attach, validate tags); `traceContext` sanitized via `SanitizeTraceContext` |
 | `MailRequestDO` | NATS/worker model (`ObjectKey` serialized; `Content []byte` is `json:"-"`) |
+| `AuditRecord` | Includes optional sanitized `traceContext` |
 | `Sender` | `DailyQuota <= 0` = unlimited; empty `AllowedDomains` = all allowed |
 | Errors | `ValidationError`, `QuotaError`, `QuotaStateError`, `SpamStateError`, `NatsPublishError` — `ApiError` is JSON only, not `error` |
 

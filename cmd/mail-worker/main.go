@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"dispatch/internal/config"
+	"dispatch/internal/httpsrv"
 	"dispatch/internal/loggy"
+	"dispatch/internal/metrics"
 	"dispatch/internal/msgraph"
 	"dispatch/internal/natsutil"
 	"dispatch/internal/version"
@@ -67,7 +69,13 @@ func main() {
 		loggy.Kv("version", version.Version),
 		loggy.Kv("ackWait", cfg.WorkerAckWait.String()),
 		loggy.Kv("maxDeliver", cfg.WorkerMaxDeliver),
+		loggy.Kv("metrics", ":"+cfg.Port+"/metrics"),
 	)
+	go func() {
+		if err := httpsrv.Run(ctx, "mail-worker", ":"+cfg.Port, metrics.Mux()); err != nil {
+			log.Error("metrics http server", err)
+		}
+	}()
 	if err := consumer.Run(ctx); err != nil {
 		log.Critical("consumer error", err)
 		os.Exit(1)

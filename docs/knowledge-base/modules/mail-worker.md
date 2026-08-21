@@ -15,10 +15,13 @@
 
 Defaults: AckWait 5m, MaxDeliver 8 (`DISPATCH_WORKER_*`). `ProvisionWorkerConsumer` creates **and** updates the consumer.
 
+`GET /metrics` and `/health` on `PORT` (default 8080). Queue gauge uses JetStream `NumPending` from Fetch metadata.
+
 ## Gotchas
 
 - **Dedup before MaxDeliver** — already-delivered must not become false FAILED after high `NumDelivered`.
 - **Get and Put both fail-closed** — double-send worse than redelivery; Put failure skips attachment cleanup.
 - **Transient vs permanent Graph errors** — mix-up loses messages or infinite-loops.
 - **Cleanup is best-effort** — Object Store TTL (72h) is the safety net.
-- Pull consumer: `Fetch(1)` loop so AckWait/InProgress cover only the in-flight message; 500ms backoff on fetch errors. Explicit ACK. Unit tests without JetStream metadata skip MaxDeliver gate fail-soft.
+- Pull consumer: `Fetch(1)` loop so AckWait/InProgress cover only the in-flight message; 500ms backoff on fetch errors. Explicit ACK. Unit tests without JetStream metadata skip MaxDeliver gate fail-soft. `Consumer.Run` is covered with embedded JetStream (not only Docker integration).
+- Audit copies sanitized `traceContext`. Graph calls get `client-request-id` = dispatch `traceId` plus W3C headers from context.

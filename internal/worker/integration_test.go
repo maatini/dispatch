@@ -267,27 +267,10 @@ func TestIntegration_MaxDeliverExhaustion_DeadLetter(t *testing.T) {
 	}
 }
 
-func TestIntegration_ConsumerRunWithTransientHandler(t *testing.T) {
+func TestIntegration_ConsumerRun_TestModeAcks(t *testing.T) {
 	js := integrationNATS(t)
-
-	stream := "TEST_CONSUMER_RUN"
-	subject := "test.consumer.run"
-	if _, err := js.AddStream(&nats.StreamConfig{
-		Name:      stream,
-		Subjects:  []string{subject},
-		Storage:   nats.MemoryStorage,
-		Retention: nats.WorkQueuePolicy,
-	}); err != nil {
-		t.Fatalf("add stream: %v", err)
-	}
-	t.Cleanup(func() { _ = js.DeleteStream(stream) })
-	if _, err := js.AddConsumer(stream, &nats.ConsumerConfig{
-		Durable:       "test-consumer-run",
-		AckPolicy:     nats.AckExplicitPolicy,
-		AckWait:       1 * time.Second,
-		FilterSubject: subject,
-	}); err != nil {
-		t.Fatalf("add consumer: %v", err)
+	if err := natsutil.ProvisionWorkerConsumer(js, time.Second, 8); err != nil {
+		t.Fatalf("provision consumer: %v", err)
 	}
 
 	deliveredKV, err := js.KeyValue(natsutil.BucketDelivered)
@@ -296,6 +279,12 @@ func TestIntegration_ConsumerRunWithTransientHandler(t *testing.T) {
 	}
 	rec := &recordingPublisher{js: js}
 	proc := NewProcessor(&transientGraphStub{}, deliveredKV, rec, nil, 8, time.Second)
+	c := NewConsumer(js, proc)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- c.Run(ctx) }()
 
 	traceID := uuid.NewString()
 	payload, err := json.Marshal(domain.MailRequestDO{
@@ -304,34 +293,31 @@ func TestIntegration_ConsumerRunWithTransientHandler(t *testing.T) {
 		Sender:     "s@example.com",
 		Recipients: []string{"r@example.com"},
 		Subject:    "consumer run test",
+		Test:       true,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := js.Publish(subject, payload); err != nil {
+	if _, err := js.Publish(natsutil.SubjectMails, payload); err != nil {
 		t.Fatalf("publish: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	sub, err := js.PullSubscribe(subject, "test-consumer-run", nats.Bind(stream, "test-consumer-run"))
-	if err != nil {
-		t.Fatalf("pull subscribe: %v", err)
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := deliveredKV.Get(traceID); err == nil {
+			cancel()
+			select {
+			case runErr := <-errCh:
+				if runErr != nil {
+					t.Fatalf("Consumer.Run: %v", runErr)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("Consumer.Run did not return after cancel")
+			}
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
-	defer func() { _ = sub.Unsubscribe() }()
-
-	// Fetch once — should get the one message published
-	msgs, err := sub.Fetch(1, nats.MaxWait(3*time.Second))
-	if err != nil || len(msgs) != 1 {
-		t.Fatalf("fetch: %v (got %d msgs)", err, len(msgs))
-	}
-	proc.Handle(ctx, msgs[0])
-
-	// Message should redeliver since handler doesn't ack
-	msgs2, err := sub.Fetch(1, nats.MaxWait(5*time.Second))
-	if err != nil || len(msgs2) != 1 {
-		t.Fatalf("second fetch (redelivery): %v (got %d msgs)", err, len(msgs2))
-	}
-	_ = msgs2[0].Ack()
+	cancel()
+	t.Fatal("Consumer.Run did not ack test-mode message into delivered KV")
 }

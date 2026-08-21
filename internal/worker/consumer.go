@@ -8,6 +8,7 @@ import (
 	"github.com/nats-io/nats.go"
 
 	"dispatch/internal/loggy"
+	"dispatch/internal/metrics"
 	"dispatch/internal/natsutil"
 )
 
@@ -64,6 +65,11 @@ func (c *Consumer) Run(ctx context.Context) error {
 			continue
 		}
 
+		if len(msgs) > 0 {
+			if md, mdErr := msgs[0].Metadata(); mdErr == nil {
+				metrics.SetWorkerQueuePending(md.NumPending)
+			}
+		}
 		for _, msg := range msgs {
 			c.processor.Handle(ctx, msg)
 		}

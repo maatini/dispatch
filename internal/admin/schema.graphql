@@ -52,6 +52,7 @@ type MailRecord {
   recipients: [String!]!
   error: String
   timestamp: String!
+  traceContext: String
 }
 
 type PagedBounceResponse {

@@ -21,3 +21,4 @@
 - `MS_GRAPH_PROXY_URL` → InsecureSkipVerify (dev only). `MS_GRAPH_MOCK_TOKEN` skips OAuth and makes Graph env vars optional.
 - Upload chunks: 429/5xx transient; other 4xx permanent (e.g. expired upload URL).
 - Draft cleanup on error uses `context.Background()` (best-effort).
+- Outgoing Graph requests set `client-request-id` from `loggy.TraceFrom(ctx)` and forward allowlisted `traceparent`/`tracestate`.

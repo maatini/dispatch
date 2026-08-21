@@ -11,6 +11,7 @@ import (
 
 	"dispatch/internal/domain"
 	"dispatch/internal/loggy"
+	"dispatch/internal/metrics"
 	"dispatch/internal/msgraph"
 	"dispatch/internal/natsutil"
 )
@@ -126,6 +127,10 @@ func terminalStop(msg *nats.Msg) {
 var errMissingTraceID = errors.New("missing traceId")
 
 func (p *Processor) Handle(ctx context.Context, msg *nats.Msg) {
+	start := time.Now()
+	result := "error"
+	defer func() { metrics.ObserveWorker(result, time.Since(start)) }()
+
 	stop := startInProgress(msg, p.inProgressEvery)
 	defer stop()
 
@@ -134,6 +139,7 @@ func (p *Processor) Handle(ctx context.Context, msg *nats.Msg) {
 		procLog.Error("dead letter: JSON parse failed", err)
 		p.writeDeadLetter(ctx, msg.Data, err)
 		_ = msg.Ack()
+		result = "dead_letter"
 		return
 	}
 
@@ -145,9 +151,12 @@ func (p *Processor) Handle(ctx context.Context, msg *nats.Msg) {
 		procLog.Error("dead letter: missing traceId", errMissingTraceID)
 		p.writeDeadLetter(ctx, msg.Data, errMissingTraceID)
 		_ = msg.Ack()
+		result = "dead_letter"
 		return
 	}
-	log := procLog.With(loggy.Kv("traceId", traceID))
+	req.TraceContext = domain.SanitizeTraceContext(req.TraceContext)
+	ctx = loggy.Context(ctx, traceID, req.TraceContext)
+	log := procLog.WithContext(ctx)
 
 	// idempotent dedup — fail-closed: ErrKeyNotFound = nicht zugestellt (weiter verarbeiten),
 	// jeder andere Fehler = transient (return ohne Ack → JetStream-Redelivery)
@@ -157,10 +166,12 @@ func (p *Processor) Handle(ctx context.Context, msg *nats.Msg) {
 	if kvErr == nil {
 		log.Info("duplicate delivery detected, acking and skipping")
 		_ = msg.Ack()
+		result = "duplicate"
 		return
 	}
 	if !errors.Is(kvErr, nats.ErrKeyNotFound) {
 		log.Warn("delivered KV lookup failed, not acking", loggy.Kv("error", kvErr.Error()))
+		result = "retry"
 		return // no ack → JetStream redelivers
 	}
 
@@ -185,6 +196,7 @@ func (p *Processor) Handle(ctx context.Context, msg *nats.Msg) {
 		} else {
 			terminalStop(msg)
 		}
+		result = "dead_letter"
 		return
 	}
 
@@ -193,33 +205,35 @@ func (p *Processor) Handle(ctx context.Context, msg *nats.Msg) {
 		fetched, err := p.attStore.Fetch(req.Attachments)
 		if err != nil {
 			log.Error("attachment fetch failed, not acking", err)
+			result = "retry"
 			return // no ack → JetStream redelivers
 		}
 		req.Attachments = fetched
 	}
 
 	if req.Test {
-		p.processTestMode(ctx, req, traceID, msg, log)
+		result = p.processTestMode(ctx, req, traceID, msg, log)
 		return
 	}
-	p.processSend(ctx, req, traceID, msg, log)
+	result = p.processSend(ctx, req, traceID, msg, log)
 }
 
-func (p *Processor) processTestMode(ctx context.Context, req domain.MailRequestDO, traceID string, msg *nats.Msg, log *loggy.Loggy) {
+func (p *Processor) processTestMode(ctx context.Context, req domain.MailRequestDO, traceID string, msg *nats.Msg, log *loggy.Loggy) string {
 	log.Info("test mode: skipping MS Graph call")
 	p.writeAudit(ctx, req, domain.StatusTestSuccess, "")
 	if _, err := p.delivered.Put(traceID, []byte{1}); err != nil {
 		// fail-closed: no Ack → redelivery; double-send is worse than redelivery
 		log.Warn("delivered KV put failed, not acking", loggy.Kv("error", err.Error()))
-		return
+		return "retry"
 	}
 	_ = msg.Ack()
 	if len(req.Attachments) > 0 {
 		p.attStore.Cleanup(req.Attachments)
 	}
+	return "test_success"
 }
 
-func (p *Processor) processSend(ctx context.Context, req domain.MailRequestDO, traceID string, msg *nats.Msg, log *loggy.Loggy) {
+func (p *Processor) processSend(ctx context.Context, req domain.MailRequestDO, traceID string, msg *nats.Msg, log *loggy.Loggy) string {
 	if err := p.graph.SendEmail(ctx, req); err != nil {
 		var transient *msgraph.GraphTransientError
 		if errors.As(err, &transient) {
@@ -228,7 +242,7 @@ func (p *Processor) processSend(ctx context.Context, req domain.MailRequestDO, t
 				loggy.Kv("error", err.Error()),
 			)
 			// no ack → JetStream redelivers; keep objects in store for next attempt
-			return
+			return "retry"
 		}
 		log.Errorc(ctx, loggy.CategoryAPIClientError, "permanent graph error, acking with FAILED", err,
 			loggy.Kv("sender", loggy.MaskEmail(req.Sender)),
@@ -238,7 +252,7 @@ func (p *Processor) processSend(ctx context.Context, req domain.MailRequestDO, t
 		if len(req.Attachments) > 0 {
 			p.attStore.Cleanup(req.Attachments)
 		}
-		return
+		return "failed"
 	}
 	log.Infoc(ctx, loggy.CategoryBusinessLogic, "mail delivered",
 		loggy.Kv("appTag", req.AppTag),
@@ -248,32 +262,34 @@ func (p *Processor) processSend(ctx context.Context, req domain.MailRequestDO, t
 	if _, err := p.delivered.Put(traceID, []byte{1}); err != nil {
 		// fail-closed: no Ack → redelivery; double-send is worse than redelivery
 		log.Warn("delivered KV put failed, not acking", loggy.Kv("error", err.Error()))
-		return
+		return "retry"
 	}
 	_ = msg.Ack()
 	if len(req.Attachments) > 0 {
 		p.attStore.Cleanup(req.Attachments)
 	}
+	return "delivered"
 }
 
 func (p *Processor) writeAudit(ctx context.Context, req domain.MailRequestDO, status, errMsg string) {
 	record := domain.AuditRecord{
-		TraceID:    req.TraceID,
-		AppTag:     req.AppTag,
-		Status:     status,
-		Sender:     req.Sender,
-		Subject:    req.Subject,
-		Recipients: req.Recipients,
-		Error:      errMsg,
-		Timestamp:  time.Now().UTC(),
+		TraceID:      req.TraceID,
+		AppTag:       req.AppTag,
+		Status:       status,
+		Sender:       req.Sender,
+		Subject:      req.Subject,
+		Recipients:   req.Recipients,
+		Error:        errMsg,
+		Timestamp:    time.Now().UTC(),
+		TraceContext: req.TraceContext,
 	}
 	data, err := json.Marshal(record)
 	if err != nil {
-		procLog.Error("marshal audit record", err)
+		procLog.Errorc(ctx, loggy.CategoryDefault, "marshal audit record", err)
 		return
 	}
 	if _, err := p.js.Publish(natsutil.SubjectAudit, data); err != nil {
-		procLog.Error("publish audit record", err)
+		procLog.Errorc(ctx, loggy.CategoryDefault, "publish audit record", err)
 	}
 }
 
@@ -285,10 +301,10 @@ func (p *Processor) writeDeadLetter(ctx context.Context, payload []byte, cause e
 	}
 	data, err := json.Marshal(dl)
 	if err != nil {
-		procLog.Error("marshal dead letter", err)
+		procLog.Errorc(ctx, loggy.CategoryDefault, "marshal dead letter", err)
 		return
 	}
 	if _, err := p.js.Publish(natsutil.SubjectDeadLetter, data); err != nil {
-		procLog.Error("publish dead letter", err)
+		procLog.Errorc(ctx, loggy.CategoryDefault, "publish dead letter", err)
 	}
 }

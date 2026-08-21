@@ -12,12 +12,12 @@ sind in `docs/ai-changes.md` dokumentiert — hier nur **noch offene** Themen.
 | Gateway Bearer-Auth, JWT `exp` required, delivered-Put fail-closed vor ACK | `docs/ai-changes.md` 2026-07-18 P0 |
 | Worker AckWait 5m / MaxDeliver 8 / InProgress heartbeat + DLQ on exhaustion | `docs/ai-changes.md` 2026-07-18 #13 |
 | Fetch(1) + fetch-Backoff; Quota CAS-Pause; KV-TTL reconcile; Sender-Cache 30s | `docs/ai-changes.md` 2026-08-21 |
+| Prometheus `/metrics` + `traceContext` in Logs/Audit/Graph (W3C-Allowlist) | `docs/ai-changes.md` 2026-08-21 |
 
 ## Medium-term
 
 | # | Änderung | Impact | Effort | Warum |
 |---|----------|--------|--------|-------|
-| 12 | Prometheus-Metriken + `traceContext` in Logs/Audit/Graph | High | Medium | Keine Queue-/Latenz-Metriken; `loggy.Info` loggt mit `context.Background()` |
 | 14b | Per-Tenant AuthZ am Send (Token/JWT an `appTag`); Admin per-Tenant-Scopes | Medium | Medium | P0 = Cluster-Token (AuthN); Tenant-Spoofing mit gestohlenem Token bleibt |
 | 15 | Quota: Per-Minute-Buckets statt Per-Request-Einträge | Medium | Medium | 1MB KV-Value-Limit bei Top-Tenants |
 | 16 | Sender-Cache via KV Watch (optional) | Low | Medium | TTL jetzt 30s; Watch nur wenn sofortige Invalidierung nötig ist |
@@ -35,9 +35,8 @@ sind in `docs/ai-changes.md` dokumentiert — hier nur **noch offene** Themen.
 
 ## Priorität (Empfehlung)
 
-1. **#12** Metriken — Operability  
-2. **#15** Quota-Buckets — Scale-Fail-Closed vermeiden  
-3. **#21** Bounce-Pagination — NDR-Backlog sonst stundenlang  
-4. **#14b** per-Tenant AuthZ — wenn Cluster-Token geteilt wird  
-5. **#22** Object-Store TTL — Parität zu KV-Reconcile  
-6. **#17–#19** wenn Volumen/Deploy schmerzhaft wird  
+1. **#15** Quota-Buckets — Scale-Fail-Closed vermeiden  
+2. **#21** Bounce-Pagination — NDR-Backlog sonst stundenlang  
+3. **#14b** per-Tenant AuthZ — wenn Cluster-Token geteilt wird  
+4. **#22** Object-Store TTL — Parität zu KV-Reconcile  
+5. **#17–#19** wenn Volumen/Deploy schmerzhaft wird  

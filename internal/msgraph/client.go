@@ -14,6 +14,7 @@ import (
 	"github.com/sony/gobreaker"
 
 	"dispatch/internal/loggy"
+	"dispatch/internal/metrics"
 )
 
 var clientLog = loggy.GetLogger("MSGraphClient")
@@ -85,12 +86,15 @@ func (c *Client) getToken(ctx context.Context) (string, error) {
 }
 
 func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, int, error) {
+	start := time.Now()
 	token, err := c.getToken(ctx)
 	if err != nil {
+		metrics.ObserveGraph("error", time.Since(start))
 		return nil, 0, err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
+	applyTraceHeaders(ctx, req)
 
 	var body []byte
 	var statusCode int
@@ -121,12 +125,42 @@ func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, int, error)
 	})
 
 	if cbErr != nil {
+		metrics.ObserveGraph(graphResult(cbErr), time.Since(start))
 		if errors.Is(cbErr, gobreaker.ErrOpenState) || errors.Is(cbErr, gobreaker.ErrTooManyRequests) {
 			return nil, statusCode, &GraphTransientError{Cause: cbErr}
 		}
 		return nil, statusCode, cbErr
 	}
+	metrics.ObserveGraph("success", time.Since(start))
 	return body, statusCode, nil
+}
+
+func applyTraceHeaders(ctx context.Context, req *http.Request) {
+	t, ok := loggy.TraceFrom(ctx)
+	if !ok {
+		return
+	}
+	if t.TraceID != "" {
+		req.Header.Set("client-request-id", t.TraceID)
+	}
+	if tp := t.Fields["traceparent"]; tp != "" {
+		req.Header.Set("traceparent", tp)
+	}
+	if ts := t.Fields["tracestate"]; ts != "" {
+		req.Header.Set("tracestate", ts)
+	}
+}
+
+func graphResult(err error) string {
+	var transient *GraphTransientError
+	if errors.As(err, &transient) {
+		return "transient"
+	}
+	var perm *GraphPermanentError
+	if errors.As(err, &perm) {
+		return "permanent"
+	}
+	return "error"
 }
 
 // doWithRetry retries on transient errors, honouring Retry-After on 429 (max 2 retries).
@@ -140,12 +174,12 @@ func (c *Client) doWithRetry(ctx context.Context, buildReq func() (*http.Request
 		}
 		body, status, err := c.do(ctx, req)
 		if err == nil {
-			clientLog.ExternalApiSuccess("MS_GRAPH", status)
+			clientLog.ExternalApiSuccess(ctx, "MS_GRAPH", status)
 			return body, status, nil
 		}
 		var transient *GraphTransientError
 		if !errors.As(err, &transient) {
-			clientLog.ApiClientError("MS_GRAPH", status, err.Error())
+			clientLog.ApiClientError(ctx, "MS_GRAPH", status, err.Error())
 			return nil, status, err
 		}
 		if attempt < 2 {
@@ -168,7 +202,7 @@ func (c *Client) doWithRetry(ctx context.Context, buildReq func() (*http.Request
 		}
 	}
 	finalErr := &GraphTransientError{Cause: fmt.Errorf("max retries exceeded")}
-	clientLog.ExternalApiFailure("MS_GRAPH", 0, finalErr)
+	clientLog.ExternalApiFailure(ctx, "MS_GRAPH", 0, finalErr)
 	return nil, 0, finalErr
 }
 

@@ -82,10 +82,11 @@ var clientLog = loggy.GetLogger("MSGraphClient")
 
 ## Context-Enriched Loggers
 
-For request-scoped logging, create a derived logger:
+Put correlation on the context; `Infoc`/`Warnc`/`Errorc` pick it up. For `Info`/`Warn`/`Error` (no ctx), derive:
 
 ```go
-log := procLog.With(loggy.Kv("traceId", traceID))
+ctx := loggy.Context(ctx, traceID, req.TraceContext)
+log := procLog.WithContext(ctx)
 log.Info("processing mail")
 ```
 

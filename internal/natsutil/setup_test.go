@@ -299,3 +299,34 @@ func TestProvisionWorkerConsumer_UpdateReconciles(t *testing.T) {
 		t.Errorf("MaxDeliver after update: want %d, got %d", wantMaxDeliver, info.Config.MaxDeliver)
 	}
 }
+
+func TestConnect_Success(t *testing.T) {
+	srv, _ := testNATS(t)
+	nc, js, err := Connect(srv.ClientURL())
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	t.Cleanup(nc.Close)
+	if js == nil {
+		t.Fatal("JetStream context must not be nil")
+	}
+	if !nc.IsConnected() {
+		t.Fatal("connection must be established")
+	}
+}
+
+func TestSetup_ProvisionsStreamsAndKV(t *testing.T) {
+	_, js := testNATS(t)
+	if err := Setup(js, time.Hour); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	if _, err := js.StreamInfo(StreamMails); err != nil {
+		t.Fatalf("mails stream after Setup: %v", err)
+	}
+	if _, err := js.KeyValue(BucketDelivered); err != nil {
+		t.Fatalf("delivered KV after Setup: %v", err)
+	}
+	if _, err := js.KeyValue(BucketQuota); err != nil {
+		t.Fatalf("quota KV after Setup: %v", err)
+	}
+}

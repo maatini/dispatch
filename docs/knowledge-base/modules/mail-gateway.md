@@ -10,6 +10,7 @@
 | `POST /dispatch/api/v1/mail/send` | Bearer `DISPATCH_GATEWAY_AUTH_TOKEN` | Accept mail |
 | `GET /health`, `/health/ready` | none | Real readiness (`nc.Status` == CONNECTED) |
 | `GET /health/live` | none | Always 200 |
+| `GET /metrics` | none | Prometheus scrape |
 
 ## Pipeline (order is fixed — do not reorder)
 
@@ -23,5 +24,6 @@ Failures: validation 400/413; quota exceeded 429; state/publish/attach 503; unau
 - **Fail-closed** — `QuotaStateError` / `SpamStateError` / attach / publish → 503, no bypass.
 - **Attachments stream** base64 → Object Store (O(1) memory); never publish without successful upload.
 - **Every response includes `traceId`** (UUID at start of `handleSend`).
+- **`traceContext` is allowlisted** — only valid W3C `traceparent`/`tracestate` are forwarded to NATS.
 - **`MaxBytesReader` before decode** → oversized body → 413 via `MaxBytesError`.
 - Domain whitelist before quota (rejected recipients must not count). Spam after quota; attach after spam.

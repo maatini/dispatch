@@ -36,6 +36,19 @@ type stubQuota struct{ err error }
 
 func (s *stubQuota) Check(_ string, _, _ int) error { return s.err }
 
+type recordingQuota struct {
+	appTag    string
+	limit     int
+	requested int
+}
+
+func (r *recordingQuota) Check(appTag string, limit, requested int) error {
+	r.appTag = appTag
+	r.limit = limit
+	r.requested = requested
+	return nil
+}
+
 type stubSpam struct{ err error }
 
 func (s *stubSpam) Check(_ string) error { return s.err }
@@ -43,6 +56,13 @@ func (s *stubSpam) Check(_ string) error { return s.err }
 type stubPublisher struct{ err error }
 
 func (s *stubPublisher) Publish(_ context.Context, _ *domain.MailRequestDO) error { return s.err }
+
+type capturePublisher struct{ last *domain.MailRequestDO }
+
+func (c *capturePublisher) Publish(_ context.Context, msg *domain.MailRequestDO) error {
+	c.last = msg
+	return nil
+}
 
 type stubAttStore struct{}
 
@@ -318,6 +338,82 @@ func TestHandleSend_AuthDisabled_AllowsWithoutToken(t *testing.T) {
 	}
 }
 
+func TestHandleSend_EmptyBearer_Unauthorized(t *testing.T) {
+	h := buildHandler(&stubSenders{sender: defaultSender()}, &stubQuota{}, &stubSpam{}, &stubPublisher{})
+	body := map[string]any{"appTag": "test", "recipients": []string{testRecipient}, "subject": "Hi"}
+	rr := sendRequestAuth(t, h, body, authHeaderBearer)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("empty Bearer token must be 401, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestHandleSend_AuthDisabledFlag_AllowsEvenWithTokenConfigured(t *testing.T) {
+	cfg := defaultCfg()
+	cfg.GatewayAuthDisabled = true
+	h := NewHandler(cfg, &stubSenders{sender: defaultSender()}, &stubQuota{}, &stubSpam{}, &stubPublisher{}, &stubAttStore{}, natsConnected)
+	body := map[string]any{"appTag": "test", "recipients": []string{testRecipient}, "subject": "Hi"}
+	rr := sendRequestAuth(t, h, body, "")
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("GatewayAuthDisabled must skip send auth, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestHandleSend_InvalidJSON(t *testing.T) {
+	h := buildHandler(&stubSenders{sender: defaultSender()}, &stubQuota{}, &stubSpam{}, &stubPublisher{})
+	req := httptest.NewRequest(http.MethodPost, "/dispatch/api/v1/mail/send", strings.NewReader("{not-json"))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", authHeaderBearer+testGatewayToken)
+	rr := httptest.NewRecorder()
+	h.Router().ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("invalid JSON must be 400, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "JSON_PARSE_ERROR") {
+		t.Errorf("body must contain JSON_PARSE_ERROR, got %s", rr.Body.String())
+	}
+}
+
+func TestHandleSend_SanitizesTraceContext(t *testing.T) {
+	pub := &capturePublisher{}
+	h := buildHandler(&stubSenders{sender: defaultSender()}, &stubQuota{}, &stubSpam{}, pub)
+	parent := "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+	body := map[string]any{
+		"appTag":     "test",
+		"recipients": []string{testRecipient},
+		"subject":    "Hello",
+		"traceContext": map[string]string{
+			"traceparent":   parent,
+			"Authorization": "Bearer secret",
+		},
+	}
+	rr := sendRequest(t, h, body)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if pub.last == nil {
+		t.Fatal("expected published message")
+	}
+	if pub.last.TraceContext["traceparent"] != parent {
+		t.Errorf("traceparent: want %s, got %v", parent, pub.last.TraceContext)
+	}
+	if _, ok := pub.last.TraceContext["Authorization"]; ok {
+		t.Error("Authorization must not be forwarded")
+	}
+}
+
+func TestMetrics_Unauthenticated(t *testing.T) {
+	h := buildHandler(&stubSenders{sender: defaultSender()}, &stubQuota{}, &stubSpam{}, &stubPublisher{})
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	rr := httptest.NewRecorder()
+	h.Router().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("/metrics: want 200, got %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "dispatch_gateway_requests_total") {
+		t.Error("/metrics missing dispatch_gateway_requests_total")
+	}
+}
+
 func TestHealth_Unauthenticated(t *testing.T) {
 	h := buildHandler(&stubSenders{sender: defaultSender()}, &stubQuota{}, &stubSpam{}, &stubPublisher{})
 	for _, path := range []string{"/health", "/health/live", "/health/ready"} {
@@ -393,5 +489,30 @@ func TestHandleSend_WithCCAndBCC(t *testing.T) {
 	rr := sendRequest(t, h, body)
 	if rr.Code != http.StatusAccepted {
 		t.Fatalf("expected 202, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestHandleSend_QuotaCountsToCcBcc(t *testing.T) {
+	q := &recordingQuota{}
+	h := buildHandler(&stubSenders{sender: defaultSender()}, q, &stubSpam{}, &stubPublisher{})
+	body := map[string]any{
+		"appTag":        "test",
+		"recipients":    []string{"to1@example.com", "to2@example.com"},
+		"ccRecipients":  []string{"cc@example.com"},
+		"bccRecipients": []string{"bcc1@example.com", "bcc2@example.com"},
+		"subject":       "Hello",
+	}
+	rr := sendRequest(t, h, body)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if q.requested != 5 {
+		t.Errorf("quota requested: want 5 (TO+CC+BCC), got %d", q.requested)
+	}
+	if q.limit != 100 {
+		t.Errorf("quota limit: want sender DailyQuota 100, got %d", q.limit)
+	}
+	if q.appTag != "test" {
+		t.Errorf("quota appTag: want test, got %s", q.appTag)
 	}
 }

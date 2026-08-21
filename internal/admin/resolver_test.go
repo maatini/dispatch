@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -194,6 +195,20 @@ func TestToMailRecordGQL_ErrorOnlyWhenSet(t *testing.T) {
 	g2 := toMailRecordGQL(domain.AuditRecord{TraceID: "t", Error: "failed"})
 	if g2.Error() == nil || *g2.Error() != "failed" {
 		t.Error("Error must be set")
+	}
+}
+
+func TestToMailRecordGQL_TraceContextJSON(t *testing.T) {
+	g := toMailRecordGQL(domain.AuditRecord{TraceID: "t"})
+	if g.TraceContext() != nil {
+		t.Error("empty TraceContext must be nil")
+	}
+	g2 := toMailRecordGQL(domain.AuditRecord{
+		TraceID:      "t",
+		TraceContext: map[string]string{"traceparent": "00-aa"},
+	})
+	if g2.TraceContext() == nil || !strings.Contains(*g2.TraceContext(), "traceparent") {
+		t.Errorf("TraceContext JSON: got %v", g2.TraceContext())
 	}
 }
 

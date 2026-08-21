@@ -62,7 +62,7 @@ improvements.md     # open backlog only
 - **Quota**: rolling 24h window (TO+CC+BCC), optimistic CAS via NATS KV, **fail-closed** (any error → HTTP 503)
 - **Spam cache**: SHA-256 fingerprint (`spam.Hash`), bucket TTL 60s
 - **Delivered dedup**: 7-day TTL in NATS KV; Get **and** Put fail-closed (Put fail → no ACK)
-- **Gateway AuthN**: Bearer `DISPATCH_GATEWAY_AUTH_TOKEN` on `/mail/send` (health open; disable only via `DISPATCH_GATEWAY_AUTH_DISABLED` for local)
+- **Gateway AuthN**: Bearer `DISPATCH_GATEWAY_AUTH_TOKEN` on `/mail/send` (health + `/metrics` open; disable only via `DISPATCH_GATEWAY_AUTH_DISABLED` for local)
 - **Never** bypass quota check or deduplication
 
 ## 5. Coding Conventions & Go Idioms
@@ -116,6 +116,7 @@ Mark important design decisions with `**WICHTIG**` or `**DESIGN-DECISION**`.
 | Bounce / NDR | `docs/knowledge-base/modules/bounce-management.md` |
 | ADRs (NATS-only, fail-closed, …) | `docs/knowledge-base/decisions.md` |
 | Logging / interfaces / errors style | `docs/knowledge-base/cross-cutting/shared-patterns.md` |
+| Prometheus / traceContext | `docs/knowledge-base/modules/infrastructure.md` |
 | Open backlog | `improvements.md` |
 | Recent rationale | `docs/ai-changes.md` (Hot decisions + last 5) |
 

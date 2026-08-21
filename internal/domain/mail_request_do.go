@@ -25,14 +25,15 @@ type AttachmentDO struct {
 }
 
 type AuditRecord struct {
-	TraceID    string    `json:"traceId"`
-	AppTag     string    `json:"appTag"`
-	Status     string    `json:"status"` // DELIVERED, FAILED, TEST_SUCCESS
-	Sender     string    `json:"sender"`
-	Subject    string    `json:"subject"`
-	Recipients []string  `json:"recipients"`
-	Error      string    `json:"error,omitempty"`
-	Timestamp  time.Time `json:"timestamp"`
+	TraceID      string            `json:"traceId"`
+	AppTag       string            `json:"appTag"`
+	Status       string            `json:"status"` // DELIVERED, FAILED, TEST_SUCCESS
+	Sender       string            `json:"sender"`
+	Subject      string            `json:"subject"`
+	Recipients   []string          `json:"recipients"`
+	Error        string            `json:"error,omitempty"`
+	Timestamp    time.Time         `json:"timestamp"`
+	TraceContext map[string]string `json:"traceContext,omitempty"`
 }
 
 type DeadLetter struct {

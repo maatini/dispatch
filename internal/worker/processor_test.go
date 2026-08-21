@@ -66,6 +66,31 @@ func TestHandle_Success(t *testing.T) {
 	}
 }
 
+func TestHandle_AuditCopiesTraceContext(t *testing.T) {
+	js := &captureJS{}
+	parent := "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+	proc := &Processor{graph: &stubGraph{}, delivered: testkit.NewMockKV(), js: js}
+	req := domain.MailRequestDO{
+		TraceID: "trace-ctx", AppTag: "app", Sender: testSender, Recipients: []string{testRecipient},
+		TraceContext: map[string]string{"traceparent": parent, "Authorization": "secret"},
+	}
+	proc.Handle(context.Background(), buildMsg(req))
+
+	if len(js.records) == 0 {
+		t.Fatal("expected audit record")
+	}
+	var audit domain.AuditRecord
+	if err := json.Unmarshal(js.records[0], &audit); err != nil {
+		t.Fatal(err)
+	}
+	if audit.TraceContext["traceparent"] != parent {
+		t.Errorf("audit traceparent: want %s, got %v", parent, audit.TraceContext)
+	}
+	if _, ok := audit.TraceContext["Authorization"]; ok {
+		t.Error("audit must not copy Authorization from traceContext")
+	}
+}
+
 func TestHandle_TransientError_NoAudit(t *testing.T) {
 	js := &captureJS{}
 	proc := &Processor{
@@ -484,8 +509,80 @@ func TestInProgressInterval(t *testing.T) {
 	if got := inProgressInterval(15 * time.Second); got != minInProgressInterval {
 		t.Errorf("15s/3=5s floored: want %v, got %v", minInProgressInterval, got)
 	}
+	if got := inProgressInterval(30 * time.Second); got != minInProgressInterval {
+		t.Errorf("30s/3=10s at floor: want %v, got %v", minInProgressInterval, got)
+	}
 	if got := inProgressInterval(60 * time.Second); got != 20*time.Second {
 		t.Errorf("60s/3: want 20s, got %v", got)
+	}
+}
+
+func TestNewProcessor_SetsMaxDeliverAndHeartbeat(t *testing.T) {
+	p := NewProcessor(&stubGraph{}, nil, &captureJS{}, nil, 8, 5*time.Minute)
+	if p.maxDeliver != 8 {
+		t.Errorf("maxDeliver: want 8, got %d", p.maxDeliver)
+	}
+	if p.inProgressEvery != 100*time.Second {
+		t.Errorf("inProgressEvery: want 100s, got %v", p.inProgressEvery)
+	}
+	if p.graph == nil || p.js == nil {
+		t.Fatal("NewProcessor must store graph and js")
+	}
+}
+
+func TestStartInProgress_ZeroIsNoop(t *testing.T) {
+	stop := startInProgress(&nats.Msg{}, 0)
+	done := make(chan struct{})
+	go func() {
+		stop()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("noop stop hung")
+	}
+}
+
+func TestStartInProgress_TickerThenStop(t *testing.T) {
+	// Plain *nats.Msg has no reply subject: InProgress errors are warn-only.
+	stop := startInProgress(&nats.Msg{}, 15*time.Millisecond)
+	time.Sleep(40 * time.Millisecond)
+	done := make(chan struct{})
+	go func() {
+		stop()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("stop hung")
+	}
+}
+
+func TestTerminalStop_PlainMsgDoesNotPanic(t *testing.T) {
+	terminalStop(&nats.Msg{})
+}
+
+func TestHandle_MaxDeliver_TerminalStopWithoutTermFn(t *testing.T) {
+	js := &captureJS{}
+	graphCalled := false
+	proc := &Processor{
+		graph:      &callCheckGraph{onCall: func() { graphCalled = true }},
+		delivered:  testkit.NewMockKV(),
+		js:         js,
+		maxDeliver: 1,
+		deliveryCountFn: func(_ *nats.Msg) (uint64, bool) {
+			return 1, true
+		},
+	}
+	req := domain.MailRequestDO{TraceID: "trace-term", AppTag: "app", Sender: testSender, Recipients: []string{testRecipient}}
+	proc.Handle(context.Background(), buildMsg(req))
+	if graphCalled {
+		t.Error("MaxDeliver path must not call Graph")
+	}
+	if len(js.records) < 2 {
+		t.Fatalf("nil termFn must still DLQ+FAILED via terminalStop, got %d records", len(js.records))
 	}
 }
 

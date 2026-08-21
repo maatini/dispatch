@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/sony/gobreaker"
+
+	"dispatch/internal/loggy"
 )
 
 func TestParseRetryAfter(t *testing.T) {
@@ -54,6 +56,38 @@ func TestBuildTransport_WithProxy(t *testing.T) {
 	tr := buildTransport("http://localhost:8000")
 	if tr == nil {
 		t.Fatal("expected non-nil transport for proxy URL")
+	}
+}
+
+func TestDo_SetsTraceHeaders(t *testing.T) {
+	var gotClientReq, gotParent, gotState string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotClientReq = r.Header.Get("client-request-id")
+		gotParent = r.Header.Get("traceparent")
+		gotState = r.Header.Get("tracestate")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	cb := gobreaker.NewCircuitBreaker(gobreaker.Settings{Name: "test-trace"})
+	c := &Client{http: &http.Client{}, breaker: cb, mockToken: "test-token"}
+	parent := "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+	ctx := loggy.Context(context.Background(), "dispatch-trace", map[string]string{
+		"traceparent": parent,
+		"tracestate":  "vendor=1",
+	})
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+	if _, _, err := c.do(ctx, req); err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	if gotClientReq != "dispatch-trace" {
+		t.Errorf("client-request-id: want dispatch-trace, got %q", gotClientReq)
+	}
+	if gotParent != parent {
+		t.Errorf("traceparent: want %s, got %q", parent, gotParent)
+	}
+	if gotState != "vendor=1" {
+		t.Errorf("tracestate: want vendor=1, got %q", gotState)
 	}
 }
 

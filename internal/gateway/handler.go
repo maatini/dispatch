@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -17,6 +18,7 @@ import (
 	"dispatch/internal/config"
 	"dispatch/internal/domain"
 	"dispatch/internal/loggy"
+	"dispatch/internal/metrics"
 	"dispatch/internal/spam"
 )
 
@@ -69,6 +71,7 @@ func (h *Handler) Router() http.Handler {
 	r.Get("/health", h.handleHealth)
 	r.Get("/health/live", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	r.Get("/health/ready", h.handleHealth)
+	r.Method(http.MethodGet, "/metrics", metrics.Handler())
 
 	r.Group(func(pr chi.Router) {
 		if !h.cfg.GatewayAuthDisabled && h.cfg.GatewayAuthToken != "" {
@@ -89,6 +92,7 @@ func (h *Handler) gatewayAuth(next http.Handler) http.Handler {
 				loggy.Kv("method", r.Method),
 				loggy.Kv("path", r.URL.Path),
 			)
+			metrics.ObserveGateway("unauthorized", 0)
 			writeError(w, http.StatusUnauthorized, domain.ErrUnauthorized, "invalid or missing token", "")
 			return
 		}
@@ -102,24 +106,34 @@ func bearerToken(r *http.Request) (string, bool) {
 }
 
 func (h *Handler) handleSend(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	result := "error"
+	defer func() { metrics.ObserveGateway(result, time.Since(start)) }()
+
 	traceID := uuid.New().String()
-	ctx := r.Context()
+	ctx := loggy.Context(r.Context(), traceID, nil)
 
 	r.Body = http.MaxBytesReader(w, r.Body, h.cfg.MaxBodySize)
 	var req domain.MailRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
+			result = "client_error"
 			writeError(w, http.StatusRequestEntityTooLarge, domain.ErrBodyTooLarge,
 				fmt.Sprintf("request body exceeds limit of %d bytes", h.cfg.MaxBodySize), traceID)
 		} else {
+			result = "client_error"
 			writeError(w, http.StatusBadRequest, domain.ErrJSONParseError, "invalid JSON body", traceID)
 		}
 		return
 	}
 
+	req.TraceContext = domain.SanitizeTraceContext(req.TraceContext)
+	ctx = loggy.Context(ctx, traceID, req.TraceContext)
+
 	// Stage 1: bean validation
 	if err := validateRequest(&req, h.cfg.MaxBodySize, h.cfg.MimeWhitelist, h.cfg.MaxTotalAttachmentMB); err != nil {
+		result = "client_error"
 		h.writeValidationError(w, err, traceID)
 		return
 	}
@@ -127,6 +141,7 @@ func (h *Handler) handleSend(w http.ResponseWriter, r *http.Request) {
 	// Stage 2: sender lookup
 	sender, err := h.senders.Get(req.AppTag)
 	if err != nil {
+		result = gatewayResultFromErr(err)
 		h.writeValidationError(w, err, traceID)
 		return
 	}
@@ -136,11 +151,11 @@ func (h *Handler) handleSend(w http.ResponseWriter, r *http.Request) {
 		allRecips := append(append(req.Recipients, req.CcRecipients...), req.BccRecipients...)
 		for _, addr := range allRecips {
 			handlerLog.Warnc(ctx, loggy.CategoryBusinessRuleViolation, "domain not whitelisted",
-				loggy.Kv("traceId", traceID),
 				loggy.Kv("recipient", loggy.MaskEmail(addr)),
 				loggy.Kv("appTag", req.AppTag),
 			)
 		}
+		result = "client_error"
 		h.writeValidationError(w, err, traceID)
 		return
 	}
@@ -148,6 +163,12 @@ func (h *Handler) handleSend(w http.ResponseWriter, r *http.Request) {
 	// Stage 4: quota
 	recipientCount := len(req.Recipients) + len(req.CcRecipients) + len(req.BccRecipients)
 	if err := h.quota.Check(req.AppTag, sender.DailyQuota, recipientCount); err != nil {
+		var qe *domain.QuotaError
+		if errors.As(err, &qe) {
+			result = "quota_exceeded"
+		} else {
+			result = "unavailable"
+		}
 		h.writeQuotaError(w, err, sender.DailyQuota, traceID)
 		return
 	}
@@ -157,10 +178,12 @@ func (h *Handler) handleSend(w http.ResponseWriter, r *http.Request) {
 	if err := h.spam.Check(spamHash); err != nil {
 		var se *domain.SpamStateError
 		if errors.As(err, &se) {
+			result = "unavailable"
 			writeError(w, http.StatusServiceUnavailable, domain.ErrNatsUnavailable,
 				"Spam service unavailable", traceID)
 			return
 		}
+		result = "client_error"
 		h.writeValidationError(w, err, traceID)
 		return
 	}
@@ -170,6 +193,7 @@ func (h *Handler) handleSend(w http.ResponseWriter, r *http.Request) {
 	if len(req.Attachments) > 0 {
 		attachmentDOs, err = h.attStore.Upload(ctx, traceID, req.Attachments)
 		if err != nil {
+			result = "unavailable"
 			handlerLog.Critical("attachment upload failed", err,
 				loggy.Kv("traceId", traceID),
 			)
@@ -195,6 +219,7 @@ func (h *Handler) handleSend(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.nats.Publish(ctx, msg); err != nil {
+		result = "unavailable"
 		handlerLog.Critical("NATS publish failed", err,
 			loggy.Kv("traceId", traceID),
 			loggy.Kv("appTag", req.AppTag),
@@ -205,13 +230,21 @@ func (h *Handler) handleSend(w http.ResponseWriter, r *http.Request) {
 	}
 
 	handlerLog.Infoc(ctx, loggy.CategoryBusinessLogic, "mail dispatched to NATS",
-		loggy.Kv("traceId", traceID),
 		loggy.Kv("appTag", req.AppTag),
 	)
 
+	result = "accepted"
 	w.Header().Set(headerContentType, contentTypeJSON)
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "SUCCESS", "traceId": traceID})
+}
+
+func gatewayResultFromErr(err error) string {
+	var ve *domain.ValidationError
+	if errors.As(err, &ve) {
+		return "client_error"
+	}
+	return "error"
 }
 
 func (h *Handler) handleHealth(w http.ResponseWriter, _ *http.Request) {

@@ -9,7 +9,9 @@ import (
 
 	"dispatch/internal/bounce"
 	"dispatch/internal/config"
+	"dispatch/internal/httpsrv"
 	"dispatch/internal/loggy"
+	"dispatch/internal/metrics"
 	"dispatch/internal/msgraph"
 	"dispatch/internal/natsutil"
 	"dispatch/internal/version"
@@ -46,7 +48,16 @@ func main() {
 	ticker := time.NewTicker(15 * time.Minute)
 	defer ticker.Stop()
 
-	log.Info("bouncemanagement started", loggy.Kv("version", version.Version), loggy.Kv("mailbox", cfg.MSGraphBounceMailbox))
+	log.Info("bouncemanagement started",
+		loggy.Kv("version", version.Version),
+		loggy.Kv("mailbox", cfg.MSGraphBounceMailbox),
+		loggy.Kv("metrics", ":"+cfg.Port+"/metrics"),
+	)
+	go func() {
+		if err := httpsrv.Run(ctx, "bouncemanagement", ":"+cfg.Port, metrics.Mux()); err != nil {
+			log.Error("metrics http server", err)
+		}
+	}()
 
 	// run immediately on start
 	if err := crawler.Run(ctx); err != nil {

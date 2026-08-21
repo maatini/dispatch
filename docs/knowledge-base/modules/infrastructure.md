@@ -7,6 +7,8 @@
 - **Only** logging path in production code — never `slog.*` / `fmt.Print*` directly.
 - `GetLogger(name)` → independent JSON handler on stdout (not `slog.Default()`).
 - PII: `loggy.MaskEmail(addr)` for every email in logs.
+- `loggy.Context(ctx, traceID, fields)` stores correlation; `Infoc`/`emit` and `WithContext` attach `traceId` + W3C fields. `Info`/`Warn`/`Error` without ctx still use `context.Background()` (startup).
+- `GET /metrics` (Prometheus) on gateway/admin; worker/bounce serve `/metrics` + `/health` on `PORT`.
 
 ## natsutil
 
