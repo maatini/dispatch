@@ -5,14 +5,13 @@
 
 ## quota.Checker
 
-- Rolling 24h window of per-request count entries; optimistic CAS (max 10 retries).
+- Rolling 24h window of per-request count entries; optimistic CAS (max 10 retries, exponential pause + jitter between conflicts).
 - `JetStreamError` (CAS conflict) → retry; other errors → `QuotaStateError` fail-closed.
 - Exhausted retries → 503 (safer than bypass).
 
 ## sender.Store
 
-- KV + 10 min in-memory cache; Put/Delete invalidate local entry only.
-- Cross-replica staleness up to TTL (acceptable; #16 backlog for KV watch).
+- KV + 30s in-memory cache; Put/Delete invalidate local entry only. Cross-process staleness up to TTL.
 
 ## spam.Checker + Hash
 

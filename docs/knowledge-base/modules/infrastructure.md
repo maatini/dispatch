@@ -11,7 +11,7 @@
 ## natsutil
 
 - `Connect` — reconnect retries built in.
-- `Setup(js, spamTTL)` — idempotent streams + KV (all four binaries call this).
+- `Setup(js, spamTTL)` — idempotent streams + KV; existing KV bucket TTL (stream MaxAge) is reconciled on Setup.
 - `ProvisionObjectStore`, `ProvisionWorkerConsumer(js, ackWait, maxDeliver)` — create **and update** consumer.
 - Constants: streams `DISPATCH_*`, buckets `senders`/`quota`/`spam`/`delivered`, subjects `cody.mailing.*`.
 
@@ -25,3 +25,4 @@
 - Prefer `Setup()` over ad-hoc provision in new binaries.
 - Consumer must be provisioned before worker `PullSubscribe`.
 - Concurrent service starts racing on stream create are OK (upsert).
+- KV bucket TTL is reconciled on Setup; Object Store TTL is create-only (#22).

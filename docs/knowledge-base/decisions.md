@@ -94,6 +94,19 @@ Key decisions and their rationale. Sourced from `ARCHITECTURE.md`, `CLAUDE.md`, 
 
 ---
 
+## Worker Fetch(1)
+
+**Decision:** The mail-worker pull consumer fetches **one** message at a time (`fetchBatch = 1`). A 500ms backoff applies on fetch errors.
+
+**Rationale:**
+- JetStream starts AckWait when a message is fetched, not when `Handle` begins
+- Fetch(N>1) would start AckWait on messages still waiting in the worker loop without InProgress heartbeats
+- In-process throughput is therefore one Graph send per worker process; scale-out is replica count (in-process concurrency remains #18)
+
+**Enforcement:** `internal/worker/consumer.go` constants `fetchBatch` / `fetchErrBackoff`.
+
+---
+
 ## Distroless Container Images
 
 **Decision:** Docker images use `gcr.io/distroless/static-debian12:nonroot` with multi-stage builds.

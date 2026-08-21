@@ -105,3 +105,15 @@ func TestCheck_CASRetryExhausted(t *testing.T) {
 		t.Fatalf("expected QuotaStateError after CAS exhaustion, got %T: %v", err, err)
 	}
 }
+
+func TestCheck_CASRetryPauses(t *testing.T) {
+	var pauses int
+	checker := &Checker{
+		kv:         &alwaysCASConflictKV{},
+		retryPause: func(int) { pauses++ },
+	}
+	_ = checker.Check("tenant1", 10, 1)
+	if pauses != maxCASRetries-1 {
+		t.Errorf("CAS retries must pause between attempts: want %d pauses, got %d", maxCASRetries-1, pauses)
+	}
+}

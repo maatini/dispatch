@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -28,13 +29,30 @@ type state struct {
 
 const maxCASRetries = 10
 
+const (
+	casRetryBase = 25 * time.Millisecond
+	casRetryCap  = 200 * time.Millisecond
+)
+
 // Checker implements rolling 24h quota via NATS KV with optimistic CAS.
 type Checker struct {
 	kv kvStore
+	// retryPause is called after a CAS conflict before the next attempt.
+	// nil skips the pause (unit tests). Production uses defaultCASPause.
+	retryPause func(attempt int)
 }
 
 func NewChecker(kv nats.KeyValue) *Checker {
-	return &Checker{kv: kv}
+	return &Checker{kv: kv, retryPause: defaultCASPause}
+}
+
+func defaultCASPause(attempt int) {
+	d := casRetryBase << attempt
+	if d > casRetryCap {
+		d = casRetryCap
+	}
+	jitter := time.Duration(rand.IntN(int(casRetryBase) + 1))
+	time.Sleep(d + jitter)
 }
 
 // Check verifies and records recipient usage. Returns QuotaError if exceeded,
@@ -52,6 +70,9 @@ func (c *Checker) Check(appTag string, limit, requested int) error {
 		if errors.As(err, &casErr) {
 			if i == maxCASRetries-1 {
 				return &domain.QuotaStateError{Cause: fmt.Errorf("CAS conflict after %d retries for %s", maxCASRetries, appTag)}
+			}
+			if c.retryPause != nil {
+				c.retryPause(i)
 			}
 			continue
 		}

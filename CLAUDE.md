@@ -33,7 +33,7 @@ devbox run test-integration   # needs NATS; //go:build integration
 
 ## 2. Tech Stack & Environment
 
-- **Go 1.25** – single static binary per service
+- **Go 1.25** (toolchain go1.26.6) – single static binary per service
 - **NATS JetStream** – sole state backend (KV + Streams + Object Store)
 - **MS Graph API v1.0** – email delivery
 - `internal/loggy` – exclusive logging wrapper (never use `slog.*` or `fmt.Println` directly)
@@ -78,7 +78,7 @@ Short list; details + examples: `docs/knowledge-base/cross-cutting/shared-patter
 ## 6. Error Handling & Resilience
 
 - Quota / NATS publish / Attachment upload errors → HTTP 503 (fail-closed)
-- MS Graph 429/5xx → **no ACK** (redelivery; Retry-After ≤ 30s); worker InProgress heartbeat (AckWait 5m default)
+- MS Graph 429/5xx → **no ACK** (redelivery; Retry-After ≤ 30s); worker Fetch(1) + InProgress heartbeat (AckWait 5m default)
 - MaxDeliver exhausted (default 8) → DLQ + FAILED + Term, no Graph; **Dedup Get before MaxDeliver gate**
 - MS Graph 4xx → ACK + FAILED in `DISPATCH_AUDIT`
 - Malformed JSON → ACK + `DISPATCH_DEAD_LETTERS`
@@ -123,4 +123,4 @@ Pipeline diagrams & NATS ownership: **only** root `ARCHITECTURE.md` (not duplica
 
 Full KB map: `docs/knowledge-base/index.md`.
 
-**Last updated:** 2026-07-18 | Version: 2.5 (agent harness notes + task router)
+**Last updated:** 2026-08-21 | Version: 2.6 (toolchain 1.26.6, Fetch(1))

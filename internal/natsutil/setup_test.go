@@ -143,11 +143,45 @@ func TestProvisionKVBuckets_SpamTTL(t *testing.T) {
 
 func TestProvisionKVBuckets_Idempotent(t *testing.T) {
 	_, js := testNATS(t)
+	ttl := time.Hour
+	if err := ProvisionKVBuckets(js, ttl); err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	if err := ProvisionKVBuckets(js, ttl); err != nil {
+		t.Fatalf("second must be idempotent: %v", err)
+	}
+	kv, err := js.KeyValue(BucketSpam)
+	if err != nil {
+		t.Fatalf("spam KV: %v", err)
+	}
+	status, err := kv.Status()
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if status.TTL().Round(time.Second) != ttl.Round(time.Second) {
+		t.Errorf("spam TTL after idempotent provision: want %v, got %v", ttl, status.TTL())
+	}
+}
+
+func TestProvisionKVBuckets_UpdateReconcilesTTL(t *testing.T) {
+	_, js := testNATS(t)
 	if err := ProvisionKVBuckets(js, time.Hour); err != nil {
 		t.Fatalf("first: %v", err)
 	}
-	if err := ProvisionKVBuckets(js, 2*time.Hour); err != nil {
-		t.Fatalf("second must be idempotent: %v", err)
+	wantTTL := 2 * time.Hour
+	if err := ProvisionKVBuckets(js, wantTTL); err != nil {
+		t.Fatalf("second with new TTL: %v", err)
+	}
+	kv, err := js.KeyValue(BucketSpam)
+	if err != nil {
+		t.Fatalf("spam KV: %v", err)
+	}
+	status, err := kv.Status()
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if status.TTL().Round(time.Second) != wantTTL.Round(time.Second) {
+		t.Errorf("spam TTL after reconcile: want %v, got %v", wantTTL, status.TTL())
 	}
 }
 

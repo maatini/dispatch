@@ -21,4 +21,4 @@ Defaults: AckWait 5m, MaxDeliver 8 (`DISPATCH_WORKER_*`). `ProvisionWorkerConsum
 - **Get and Put both fail-closed** — double-send worse than redelivery; Put failure skips attachment cleanup.
 - **Transient vs permanent Graph errors** — mix-up loses messages or infinite-loops.
 - **Cleanup is best-effort** — Object Store TTL (72h) is the safety net.
-- Pull consumer: `Fetch(10)` loop, explicit ACK. Unit tests without JetStream metadata skip MaxDeliver gate fail-soft.
+- Pull consumer: `Fetch(1)` loop so AckWait/InProgress cover only the in-flight message; 500ms backoff on fetch errors. Explicit ACK. Unit tests without JetStream metadata skip MaxDeliver gate fail-soft.

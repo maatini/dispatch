@@ -13,7 +13,8 @@ import (
 )
 
 // DefaultCacheTTL is the default in-memory cache duration for sender lookups.
-const DefaultCacheTTL = 10 * time.Minute
+// Short enough that admin Put/Delete on another process is visible without KV Watch.
+const DefaultCacheTTL = 30 * time.Second
 
 // KV is the minimal KV store interface required by Store.
 type KV interface {

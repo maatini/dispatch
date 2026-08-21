@@ -126,9 +126,43 @@ func upsertKV(js nats.JetStreamContext, cfg nats.KeyValueConfig) error {
 	_, err := js.KeyValue(cfg.Bucket)
 	if err == nats.ErrBucketNotFound {
 		_, err = js.CreateKeyValue(&cfg)
-		return err
+		if err != nil {
+			return fmt.Errorf("create KV %s: %w", cfg.Bucket, err)
+		}
+		return nil
 	}
-	return err
+	if err != nil {
+		return fmt.Errorf("KV %s: %w", cfg.Bucket, err)
+	}
+	return reconcileKVTTL(js, cfg)
+}
+
+// kvStreamName is the JetStream stream backing a KV bucket (nats.go kvBucketNameTmpl).
+func kvStreamName(bucket string) string {
+	return "KV_" + bucket
+}
+
+// reconcileKVTTL applies KeyValueConfig.TTL (stream MaxAge) on an existing bucket.
+// The classic JetStream API has no UpdateKeyValue; TTL lives on the KV_* stream.
+func reconcileKVTTL(js nats.JetStreamContext, cfg nats.KeyValueConfig) error {
+	stream := kvStreamName(cfg.Bucket)
+	info, err := js.StreamInfo(stream)
+	if err != nil {
+		return fmt.Errorf("stream info %s: %w", stream, err)
+	}
+	if info.Config.MaxAge == cfg.TTL {
+		return nil
+	}
+	sc := info.Config
+	sc.MaxAge = cfg.TTL
+	duplicateWindow := 2 * time.Minute
+	if cfg.TTL > 0 && cfg.TTL < duplicateWindow {
+		sc.Duplicates = cfg.TTL
+	}
+	if _, err := js.UpdateStream(&sc); err != nil {
+		return fmt.Errorf("update KV stream %s: %w", stream, err)
+	}
+	return nil
 }
 
 // ProvisionObjectStore ensures the attachment Object Store exists.

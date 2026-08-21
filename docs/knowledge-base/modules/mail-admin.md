@@ -15,5 +15,5 @@
 - Stream reads use temporary `SubscribeSync` + DeliverAll — OK for moderate volume; not for large history (#17 backlog).
 - `reprocessDeadLetter` republishes with `traceId`/`appTag` headers so worker dedup works; invalid payload → error, no publish.
 - Admin API returns **raw** emails to authenticated clients; PII masking is for logs only (`loggy.MaskEmail`).
-- Sender Put/Delete invalidates **local** cache only — other gateway replicas may stale up to 10 min.
+- Sender Put/Delete invalidates **local** cache only — other gateway processes may stale up to 30s (`sender.DefaultCacheTTL`).
 - Local tokens: `tools/gen-admin-token` (always sets `exp`).

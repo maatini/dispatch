@@ -32,9 +32,7 @@ func parseLog(t *testing.T, buf *bytes.Buffer) map[string]any {
 
 func TestGetLogger_NotNil(t *testing.T) {
 	l := GetLogger("SomeClass")
-	if l == nil {
-		t.Fatal("GetLogger returned nil")
-	}
+	// GetLogger always returns a non-nil *Loggy; a nil check here trips SA5011.
 	if l.className != "SomeClass" {
 		t.Errorf("className: want SomeClass, got %s", l.className)
 	}

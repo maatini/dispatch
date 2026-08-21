@@ -9,6 +9,7 @@
 
 ## Hot decisions (max ~10; update when MUST/ADR changes)
 
+- 2026-08-21: Worker **Fetch(1)** (AckWait nur für in-flight msg); KV-Bucket **TTL reconcile** on Setup; sender cache **30s**
 - 2026-07-18: delivered KV **Get and Put** fail-closed (Put fail → no ACK; double-send worse than redelivery)
 - 2026-07-18: Worker **AckWait 5m / MaxDeliver 8 / InProgress**; Dedup Get **before** MaxDeliver gate
 - 2026-07-18: Gateway Bearer AuthN on `/mail/send`; Admin JWT **exp required**
@@ -226,3 +227,24 @@
 - `Dockerfile` (`golang:1.26-alpine` Digest auf 1.26.6-Image), `docs/knowledge-base/overview.md`
 **Ergebnis:** `devbox run lint` 0 Issues; `devbox run test` grün; `govulncheck ./...` → 0 affecting.
 **Hinweis:** Security-Trivy scannt GHCR-`:latest` — nach Push auf main erst nach erfolgreichem `build.yml`-Image-Push wieder grün.
+
+## 2026-08-21 — Worker Fetch(1), Quota CAS-Pause, KV-TTL reconcile, Sender-Cache 30s
+
+**Begründung:** Code-Review gegen improvements.md: Fetch(10) startet AckWait ohne InProgress auf wartenden Msgs; Quota-CAS retried ohne Pause (503 vor 1MB); KV-TTL wurde nach Create ignoriert; 10-min Sender-Cache über Prozessgrenzen.
+**Änderungen:**
+- `internal/worker/consumer.go` (Fetch(1); 500ms Backoff bei Fetch-Fehler)
+- `internal/quota/quota.go` (exponentielle Pause + Jitter zwischen CAS-Konflikten)
+- `internal/natsutil/setup.go` (bestehende KV-Buckets: MaxAge/TTL reconcilen)
+- `internal/sender/sender.go` (`DefaultCacheTTL` 10min → 30s); Tests + KB/ARCHITECTURE/README/`improvements.md` #16
+**Ergebnis:** `devbox run test` grün; golangci auf geänderten Packages 0 Issues. Repo-weites `devbox run lint` rot an vorbestehendem SA5011 in `internal/loggy/loggy_test.go`.
+**Hinweis:** **DESIGN-DECISION** Fetch(1) statt Worker-Concurrency/Ordering. KV-Watch (#16) zurückgestuft. Worker-Restart nötig für laufende Prozesse.
+
+## 2026-08-21 — Docs-Audit + SA5011; Bounce/Object-Store Backlog
+
+**Begründung:** Living Docs (Testzahlen 241/249, Coverage, Bounce-Gotcha, mutate-Liste) widersprachen dem Code; Bounce-KB behauptete „viele PATCHes“, der Client liest aber nur die erste Graph-Seite. Repo-Lint war rot an SA5011.
+**Änderungen:**
+- `internal/loggy/loggy_test.go` (unmöglichen nil-Check nach `GetLogger` entfernt)
+- README/CLAUDE/ARCHITECTURE/KB (`decisions.md` Fetch(1)-ADR; Bounce-Gotcha; Coverage Stand 2026-08-21; Tests 251)
+- `improvements.md` (#21 Graph nextLink, #22 Object-Store TTL; #12/#18 präzisiert)
+**Ergebnis:** `devbox run lint` 0 Issues; `devbox run test` grün.
+**Hinweis:** Historische 241/249 in älteren Log-Einträgen bleiben als Audit-Trail.

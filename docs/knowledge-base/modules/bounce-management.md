@@ -12,6 +12,6 @@
 
 ## Gotchas
 
-- No unread-message limit/pagination — large backlog = many Graph PATCHes per run.
+- Single Graph GET, no `@odata.nextLink` — Graph default page (~10). A large unread backlog drains one page per 15 min tick, not as a burst of PATCHes (#21).
 - Concurrent run overlap possible if first crawl is slow; MarkAsRead keeps it idempotent enough.
 - Missing trace ID still publishes bounce (uncorrelated).

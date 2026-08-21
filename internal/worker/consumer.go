@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/nats-io/nats.go"
 
@@ -11,6 +12,13 @@ import (
 )
 
 var consumerLog = loggy.GetLogger("Consumer")
+
+const (
+	// fetchBatch is 1 so AckWait/InProgress apply only to the message currently
+	// in Handle. A larger batch would start AckWait on unprocessed messages.
+	fetchBatch      = 1
+	fetchErrBackoff = 500 * time.Millisecond
+)
 
 // Consumer pulls messages from NATS JetStream and dispatches them to Processor.
 type Consumer struct {
@@ -42,13 +50,17 @@ func (c *Consumer) Run(ctx context.Context) error {
 		default:
 		}
 
-		msgs, err := sub.Fetch(10, nats.Context(ctx))
+		msgs, err := sub.Fetch(fetchBatch, nats.Context(ctx))
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil
 			}
-			// transient fetch error — log and retry
 			consumerLog.Warn("fetch error", loggy.Kv("error", err.Error()))
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(fetchErrBackoff):
+			}
 			continue
 		}
 

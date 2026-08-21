@@ -61,14 +61,14 @@ HTTP POST /dispatch/api/v1/mail/send
 │      Größenlimits)                │
 │                                   │
 │  2  Sender-Lookup (appTag → KV)   │
-│     ┌─ Cache (10 min) ────┐       │
+│     ┌─ Cache (30 s) ─────┐       │
 │     └─ NATS KV senders ──┘       │
 │                                   │
 │  3  Domain-Whitelist              │
 │     (AllowedDomains pro Sender)   │
 │                                   │
 │  4  Quota-Check (rolling 24h)     │
-│     CAS-Loop (max 10 Retries)     │
+│     CAS-Loop (max 10, Pause+Jitter)│
 │     Fail-closed: KV-Fehler → 503  │
 │                                   │
 │  5  Spam-Dedup (SHA-256)          │
@@ -76,7 +76,7 @@ HTTP POST /dispatch/api/v1/mail/send
 │     NATS KV spam (60s TTL)        │
 │                                   │
 │  6  Anhang-Upload                 │
-│     decode base64 → Object Store  │
+│     stream base64 → Object Store  │
 │     Fehler → HTTP 503             │
 │                                   │
 │  7  NATS Publish → DISPATCH_MAILS │
@@ -86,7 +86,7 @@ HTTP POST /dispatch/api/v1/mail/send
 ```
 
 ```
-NATS Consumer (pull, explicit ACK, AckWait 5m, MaxDeliver 8)
+NATS Consumer (pull, Fetch(1), explicit ACK, AckWait 5m, MaxDeliver 8)
   + InProgress-Heartbeat (AckWait/3, min 10s)
         │
         ▼
@@ -225,7 +225,7 @@ bounce.Crawler.Run(ctx)                     ← internal/bounce
 
 ## Resilienz
 
-**Quota:** Fail-closed. Jeder KV-Fehler → HTTP 503, kein Bypass. Optimistic CAS mit max. 10 Retries; nach Erschöpfung → `QuotaStateError`.
+**Quota:** Fail-closed. Jeder KV-Fehler → HTTP 503, kein Bypass. Optimistic CAS mit max. 10 Retries und exponentieller Pause + Jitter zwischen Konflikten; nach Erschöpfung → `QuotaStateError`.
 
 **Worker-Idempotenz:** `delivered` KV (7-Tage-TTL) verhindert Doppelversand bei Worker-Absturz nach Graph-Erfolg und vor ACK. Put vor ACK ist fail-closed (Put-Fehler → kein ACK).
 
