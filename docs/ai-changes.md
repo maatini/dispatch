@@ -270,3 +270,12 @@
 - `.github/workflows/integration.yml` (`pull_request`); Integration `Consumer.Run` nutzt jetzt wirklich `Run`
 **Ergebnis:** `devbox run lint` 0 Issues; `devbox run test` → 321 PASS, 1 SKIP; `devbox run test-integration` grün.
 **Hinweis:** Worker 94 %, Gateway 88 %, Quota 86 %, Spam 100 %. `devbox run mutate` ist wieder ein echtes Gate.
+
+## 2026-08-21 — Release v0.7.0
+
+**Begründung:** Bündelung seit v0.6.0: Fetch(1), Quota-CAS-Pause, KV-TTL, Sender-Cache 30s, #12 Prometheus+traceContext, Go 1.26.6, Produktions-Tests.
+**Änderungen:**
+- `internal/version/version.go`, `Dockerfile`, `.github/workflows/build.yml` (`0.6.0` → `0.7.0`)
+- GitHub Release `v0.7.0` mit Release Notes
+**Ergebnis:** Version-Bump; Release über `gh release create`.
+**Hinweis:** Worker/Bounce binden `PORT` für `/metrics`+`/health` (Default 8080). Integration-CI: `TestIntegration_ConsumerRun_TestModeAcks` isolieren (nil attStore vs. parallele Gateway-IT).
